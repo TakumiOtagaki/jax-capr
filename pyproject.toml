@@ -1,0 +1,29 @@
+[project]
+name = "jax-capr"
+version = "0.1.0"
+description = "Inside/outside experiments for JAX-based RNA folding"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "jax>=0.4.28",
+  "jaxlib>=0.4.28",
+  "numpy>=1.26",
+  "viennarna>=2.6",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+default-groups = ["dev"]
+
+# pyproject.toml
+[dependency-groups]
+dev = []
+
+[tool.uv.workspace]
+members = ["venv"]
