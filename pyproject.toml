@@ -3,12 +3,13 @@ name = "jax-capr"
 version = "0.1.0"
 description = "Inside/outside experiments for JAX-based RNA folding"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = "==3.10.4"
 dependencies = [
   "jax>=0.4.28",
   "jaxlib>=0.4.28",
   "numpy>=1.26",
   "viennarna>=2.6",
+  "setuptools",
 ]
 
 [project.optional-dependencies]
