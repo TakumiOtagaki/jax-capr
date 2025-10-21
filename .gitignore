@@ -1,3 +1,5 @@
 references
 # uv
 venv
+__pycache__
+jax_capr.egg-info
