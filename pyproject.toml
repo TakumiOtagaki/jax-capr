@@ -9,7 +9,9 @@ dependencies = [
   "jaxlib>=0.4.28",
   "numpy>=1.26",
   "viennarna>=2.6",
+  "pandas>=2.0",
   "setuptools",
+  "pytest",
 ]
 
 [project.optional-dependencies]
