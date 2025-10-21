@@ -84,7 +84,7 @@ def compute_inside_outside(
         seq,
         em,
         max_loop=max_loop if max_loop is not None else MAX_LOOP,
-        # scale=scale,
+        scale=scale if scale is not None else 0.0,
     )
 
     E = inside.E
@@ -396,7 +396,7 @@ def compute_inside_outside(
                 queue.append(child)
 
     bpp = np.zeros((n, n), dtype=np.float64)
-    Z = inside.E[0]
+    Z = inside.partition
     for i in range(n):
         for j in range(i + 1, n):
             prob = 0.0
