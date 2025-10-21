@@ -1,0 +1,9 @@
+[submodule "submodules/CapR"]
+	path = submodules/CapR
+	url = git@github.com:fukunagatsu/CapR.git
+[submodule "submodules/LinearCapR"]
+	path = submodules/LinearCapR
+	url = git@github.com:hoget157/LinearCapR.git
+[submodule "submodules/jax-rnafold"]
+	path = submodules/jax-rnafold
+	url = git@github.com:rkruegs123/jax-rnafold.git
