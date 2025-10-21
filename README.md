@@ -5,6 +5,7 @@
 ```bash
 uv sync
 uv pip install -e ./submodules/jax-rnafold
+uv pip install ViennaRNA pandas
 ```
 
 The ViennaRNA Python API is required for the comparison script and tests:
