@@ -1,0 +1,88 @@
+Helper (precompute once):
+  # 1) multibranch 内部で使う M(1, a, b) を、区間長だけのテンソルに射影できるならそうする
+  #    そうでない場合も、そのまま index で参照すれば良い
+  # 2) internal 用に、許容する (u,v) の集合 U = {(u,v) | u>=0, v>=0, u+v <= C} を列挙
+  #    F2_TABLE[u][v][i][j] = F2_WEIGHT(i,j, i+1+u, j-1-v) を事前計算 or on-the-fly で評価
+  #    ※ OMM/末端ミスマッチは F2_WEIGHT に含める
+
+Procedure (vectorized):
+
+1) 初期化（Aと同じ）
+   bar_xi[0] = 1; 他は 0
+
+2) xi outside（Aと同じだが、行列演算でまとめても良い）
+   for i in 0..n-1:
+       bar_xi[i+1] += bar_xi[i]
+       # vectorized over j
+       J = range(i+1, n)
+       bar_P[i, J]      += bar_xi[i] * xi[J+1]         # 1×|J|
+       bar_xi[J+1]      += bar_xi[i] * P[i, J]         # 1×|J|
+
+3) 長さループ（ℓ = j-i）
+   for ℓ in (n-1) downTo 1:
+
+       # ---------- (I) M の outside：一括更新 ----------
+       # a) 未対合1塩基消費：bar_M[p, i+1, j] += bar_M[p, i, j] * BMU(1)
+       #    -> これは "左に1シフト" + スカラー乗算 でベクトル化可
+       for p in {0,1,2}:
+           # take slice of span ℓ: i in [0..n-1-ℓ], j=i+ℓ
+           S = bar_M[p, 0: n-ℓ, 0: n-ℓ]  aligned so that S[i] corresponds to (i, i+ℓ)
+           bar_M[p, 1: n-ℓ, 1: n-ℓ+ℓ?] += S * BMU(1)   # 実装では (i+1, j) インデクシングで
+
+       # b) 分岐：Σ_k を batched matmul で
+       #    bar_P[i,k] += bar_M[p,i,j]*BMp*M[max(0,p-1),k+1,j]
+       #    bar_M[p-1,k+1,j] += bar_M[p,i,j]*BMp*P[i,k]
+       for p in {0,1,2}:
+           childp = max(0, p-1)
+
+           # k を軸にまとめる（各 (i,j) 固定で k を全走査）:
+           #   Left tensor  L[i,k]   = P[i,k]
+           #   Right tensor R[k,j]   = M[childp, k+1, j]
+           #   Weight tensor W[i,j]  = bar_M[p,i,j] * BMp
+           # すると:
+           #   bar_M[childp, k+1, j] += Σ_i W[i,j] * L[i,k]        (i で縮約)
+           #   bar_P[i,k]            += Σ_j W[i,j] * R[k,j]        (j で縮約)
+           # 実装は tensordot / batched_gemm で OK
+
+           W = bar_M[p, :, :] * BMp
+           # 更新1: bar_P  ←  (over j) contraction of W[i,j] with R[k,j]
+           bar_P[:, :] += contract_over_j(W,  M[childp, shift_kp1, :])  # 具体実装は後述のコメント参照
+           # 更新2: bar_M(childp) ← (over i) contraction of W[i,j] with L[i,k]
+           bar_M[childp, :, :] += contract_over_i(W,  P[:, :])
+
+       # ---------- (II) P の outside：一括更新 ----------
+       # (a) multibranch 親→子 M(2,i+1,j-1) へ（これは単純）
+       bar_M[2, 1: n-ℓ, ℓ-1-shift?] += bar_P[0: n-ℓ, ℓ] * (BMc * BMp)
+       # 実装では (i,j=i+ℓ) の列ベクトルを 1 つ左内側へ配置して加算
+
+       # (b) internal/bulge/stack 親→子 P(h,l) へ
+       #     (u,v) バケツごとの対角ベクトル化
+       for each (u,v) in U:    # u+v ≤ C
+           # 親 (i,j) の対角 ℓ に対して、子は h=i+1+u, l=j-1-v
+           # つまり、親の全 i を1本のベクトルにすると、子 (h,l) も同じ長さのベクトルで index が一致
+           I = 0 .. (n-1-ℓ)                 # 全 i
+           H = I + 1 + u
+           L = (I + ℓ) - 1 - v
+           # 子がちゃんと区間内に収まるものだけマスク
+           mask = (H < L)
+
+           w = F2_TABLE[u][v][ I , I+ℓ ]    # or F2_WEIGHT(i,j,h,l) をベクトルで
+           bar_P[ H[mask], L[mask] ] += bar_P[ I[mask], I[mask]+ℓ ] * w[mask]
+
+       # (c) multibranch (i,j) → 子 P(h,l) は、O(n³) 版では
+       #     あなたのノートの和を使う：barP^m, barP^m1 を右端 l 固定で集計し、左端 h ごとに前置和
+       #     ここで処理するのは "右端 = l = i+ℓ の対角" で、親は必ずそれより長いので因果順は保たれる
+
+       l = (all right-ends on this diagonal)             # l = i+ℓ
+       # まず、固定 l について i を軸に:
+       #   barP_m[i]  = Σ_{j>l} bar_P[i,j] * M(1, l+1, j-1)
+       #   barP_m1[i] = Σ_{j>l} bar_P[i,j] * BMU(j-l-1)
+       barP_m  = reduce_sum_over_j_gt_l( bar_P[:, :]*M1_tensor(l), axis=j )
+       barP_m1 = reduce_sum_over_j_gt_l( bar_P[:, :]*BMU_tensor(l), axis=j )
+
+       # つぎに、各 h<l に対して i<h の前置和を一括で取る（行列積 or prefix-scan）
+       #   add = BMc*BMp * [  M(1, i+1, h-1) @ barP_m1[i]  +  {M(1, i+1, h-1)+BMU(h-i-1)} @ barP_m[i]  ]
+       # これは h を縦ベクトル、i を横ベクトルとして 2 回の GEMV で計算できる
+       ADD1[h] =  Σ_{i<h}  M1_left(i,h) * barP_m1[i]
+       ADD2[h] =  Σ_{i<h} (M1_left(i,h) + BMU(h-i-1)) * barP_m[i]
+       bar_P[h, l] += (BMc * BMp) * (ADD1[h] + ADD2[h])
