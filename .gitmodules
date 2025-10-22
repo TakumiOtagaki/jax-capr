@@ -6,7 +6,7 @@
 	url = git@github.com:hoget157/LinearCapR.git
 [submodule "submodules/jax-rnafold"]
 	path = submodules/jax-rnafold
-	url = git@github.com:rkruegs123/jax-rnafold.git
+	url = git@github.com:TakumiOtagaki/jax-rnafold.git
 [submodule "submodules/ViennaRNA"]
 	path = submodules/ViennaRNA
 	url = git@github.com:ViennaRNA/ViennaRNA.git
