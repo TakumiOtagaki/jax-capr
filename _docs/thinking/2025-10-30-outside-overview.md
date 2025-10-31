@@ -24,3 +24,41 @@
 ## ViennaRNA の調査メモ
 - `src/ViennaRNA/probabilities/equilibrium_probs.c` では内部ループの outside 処理を都度 `expintern[...]` や `expmismatchI[...]` を掛け合わせて実行しており、OMM 相当の補助テーブルは見当たらない。
 - Vienna は C 実装でループを直接回しても十分高速と判断し、外側ミスマッチを別テーブルに切り出す最適化は行っていない模様。
+
+## Outside 変数（OMM / P）の勾配的な伝播
+Forward での依存をそのまま計算グラフと見なすと、一般内部ループに関して次の 2 段の伝播が必要になる。
+
+### 1. `β_P → β_OMM`
+Forward では
+```
+P[bp, i, j] += mmij(bi,bj,i,j) · en_internal_init(lup+rup)
+               · en_internal_asym(lup,rup) · s_table[lup+rup+2]
+               · OMM[k, l]
+```
+が加算される（`k = i + lup + 1`, `l = j - rup - 1` を満たす一般内部ループのみ）。  
+従って outside では
+```
+β_OMM[k, l] += β_P[bp, i, j]
+               · mmij(bi,bj,i,j)
+               · en_internal_init(lup+rup)
+               · en_internal_asym(lup,rup)
+               · s_table[lup+rup+2]
+```
+を積み上げる。`lup > 1`, `rup > 1`, かつ 2×2/2×3/3×2 などの特例を除外する条件は forward と同じ。
+
+### 2. `β_OMM → β_P`
+OMM 自体は
+```
+OMM[i, j] = Σ_{bp,a,b} P[bp, i, j]
+                        · p_{i-1,a} · p_{j+1,b}
+                        · p_{i,bi}  · p_{j,bj}
+                        · en_il_outer_mismatch(bi, bj, a, b)
+```
+なので、各 `P[bp, i, j]` には
+```
+β_P[bp, i, j] += β_OMM[i, j]
+                 · p_{i-1,a} · p_{j+1,b}
+                 · p_{i,bi}  · p_{j,bj}
+                 · en_il_outer_mismatch(bi, bj, a, b)
+```
+を全ての `(a,b)` について加算する。自動微分で言えば、OMM は `P[bp, i, j]` に掛けられた係数の勾配をそのまま伝える役割になる。
