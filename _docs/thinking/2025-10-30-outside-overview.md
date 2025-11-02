@@ -62,3 +62,19 @@ OMM[i, j] = Σ_{bp,a,b} P[bp, i, j]
                  · en_il_outer_mismatch(bi, bj, a, b)
 ```
 を全ての `(a,b)` について加算する。自動微分で言えば、OMM は `P[bp, i, j]` に掛けられた係数の勾配をそのまま伝える役割になる。
+
+
+まとめると
+```math
+(1) P[bp,i,j] += mm_{ij} · en_internal_init(lup+rup)
+                     · en_internal_asym(lup,rup) · s_table[lup+rup+2]
+                     · OMM[k,l]
+    ⇒ β_OMM[k,l]  += β_P[bp,i,j] · mm_{ij} · en_internal_init(...) · en_internal_asym(...) · s_table[...]
+
+(2) OMM[i,j] = Σ_{bp,a,b} P[bp,i,j]
+                           · p_{i-1,a} · p_{j+1,b} · p_{i,bi} · p_{j,bj}
+                           · en_il_outer_mismatch(bi,bj,a,b)
+    ⇒ β_P[bp,i,j] += β_OMM[i,j] · p_{i-1,a} · p_{j+1,b} · p_{i,bi} · p_{j,bj}
+                                 · en_il_outer_mismatch(bi,bj,a,b)
+
+```

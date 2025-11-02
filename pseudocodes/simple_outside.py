@@ -14,6 +14,10 @@ def outside(n, xi, P, M0, M1, M2, B_Mu, B_Mp, B_Mc,
     M1_bar = [[0.0]*(n+1) for _ in range(n+1)]
     M0_bar = [[0.0]*(n+1) for _ in range(n+1)]
 
+    # 2) barP と集約テーブル（全ゼロで開始）
+    barPm  = [[0.0]*n for _ in range(n)]   # \bar P^m(i,l)
+    barPm1 = [[0.0]*n for _ in range(n)]   # \bar P^{m1}(i,l)
+
     # (A) external loop outside (right -> left)
     for r in range(n-1, -1, -1):  # r = i in text
         # unpaired propagate
@@ -28,19 +32,9 @@ def outside(n, xi, P, M0, M1, M2, B_Mu, B_Mp, B_Mc,
         # --- precompute barP^m and barP^{m1} for this diagonal, as functions of (i,l) ---
         # barPm[i][l] = sum_{j>l} P_bar[i][j] * M1[l+1][j-1]
         # barPm1[i][l]= sum_{j>l} P_bar[i][j] * (B_Mu)^(j-l-1)
-        barPm  = [[0.0]*(n+1) for _ in range(n+1)]
-        barPm1 = [[0.0]*(n+1) for _ in range(n+1)]
-        for i in range(1, n):
-            # accumulate over j descending so that powers of B_Mu can be updated in O(1)
-            power = 0.0  # effectively stores sum P_bar[i][j]*(B_Mu)^(j-l-1) with l=j-1 baseline
-            # we keep a running list over l by updating power per l; for clarity we use simple O(n^2)
-            for l in range(i+1, n):
-                s_m = 0.0; s_m1 = 0.0
-                for j in range(l+1, n+1):
-                    s_m  += P_bar[i][j] * M1[l+1][j-1]
-                    s_m1 += P_bar[i][j] * (B_Mu ** (j-l-1))
-                barPm[i][l]  = s_m
-                barPm1[i][l] = s_m1
+
+        # --------- for LLM, fill here -------
+        # ------------------------------------
 
         for i in range(1, n-d+2):
             j = i + d - 1
