@@ -1,82 +1,67 @@
-def outside(n, xi, P, M0, M1, M2, B_Mu, B_Mp, B_Mc,
-            B_f2, Lmax):
-    """
-    xi[t]      : prefix partition up to t (xi[0]=1, xi[n]=Z)
-    P[i,j]     : Z^b(i,j)
-    M0/1/2[i,j]: M(p,i,j) for p=0,1,2
-    B_f2(i,j,h,l): Boltzmann weight for two-loop (i,j)-(h,l) excl. OMM if separated
-    Lmax       : internal loop size limit (e.g., 30); None if not used
-    """
-    # init
-    xi_bar = [0.0]*(n+1); xi_bar[n] = 1.0
-    P_bar  = [[0.0]*(n+1) for _ in range(n+1)]
-    M2_bar = [[0.0]*(n+1) for _ in range(n+1)]
-    M1_bar = [[0.0]*(n+1) for _ in range(n+1)]
-    M0_bar = [[0.0]*(n+1) for _ in range(n+1)]
+beta = 1 / 0.6 # 1 / kT
+Lmax = 30
+import numpy as np
 
-    # 2) barP と集約テーブル（全ゼロで開始）
-    barPm  = [[0.0]*n for _ in range(n)]   # \bar P^m(i,l)
-    barPm1 = [[0.0]*n for _ in range(n)]   # \bar P^{m1}(i,l)
+def B(x):
+    return np.exp(- beta * x)
 
-    # (A) external loop outside (right -> left)
-    for r in range(n-1, -1, -1):  # r = i in text
-        # unpaired propagate
-        xi_bar[r] += xi_bar[r+1]
-        # paired cases: (i,k) ends at r<k<=n
-        for k in range(r+1, n+1):
-            P_bar[r][k] += xi_bar[k+1] * xi[r-1]  # ext-left * ext-right
-            xi_bar[r-1] += xi_bar[k+1] * P[r][k]
+def f_2(i, j, h, l, OMM):
+    return 1.0 # Placeholder for the actual function
 
-    # (B) span-descending pass for P_bar and M_bar
-    for d in range(n, 1, -1):              # span length
-        # --- precompute barP^m and barP^{m1} for this diagonal, as functions of (i,l) ---
-        # barPm[i][l] = sum_{j>l} P_bar[i][j] * M1[l+1][j-1]
-        # barPm1[i][l]= sum_{j>l} P_bar[i][j] * (B_Mu)^(j-l-1)
+def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
+    # init ...
+    bar_xi = [0.0]*(n+1); bar_xi[n] = 1.0
+    bar_P  = np.zeros((n+1, n+1))
+    bar_M = np.zeros((3, n+1, n+1))  # bar_M[0]: M0, bar_M[1]: M1, bar_M[2]: M2
 
-        # --------- for LLM, fill here -------
-        # ------------------------------------
+    # 集約テーブルの初期化
+    bar_Pm  = np.zeros((n+1, n+1))   # Σ_{j>l} bar_P[i][j] * M1[l+1][j-1]
+    bar_Pm1 = np.zeros((n+1, n+1))   # Σ_{j>l} bar_P[i][j] * B_Mu**(j-l-1)
 
-        for i in range(1, n-d+2):
-            j = i + d - 1
-            # (B1) P -> child M2
-            if i+1 <= j-1:
-                M2_bar[i+1][j-1] += P_bar[i][j] * (B_Mc * B_Mp)
+    # (A) xi recursion
+    for i in range(1, n + 1): # i = 1, 2, ..., n (0-origin)
+        bar_xi[i] += xi[i-1] + sum([
+            bar_xi[j] * P[j, i-1] for j in range(0, i-1) #j = 0, 1, ..., i - 2
+        ])
 
-            # (B2) P -> child P (two-loop)
-            for h in range(i+1, j-1):
-                for l in range(h+1, j):
-                    if Lmax is None or (h-i-1)+(j-l-1) <= Lmax:
-                        P_bar[h][l] += P_bar[i][j] * B_f2(i,j,h,l)
-
-            # (B3) P -> child P (multiloop via barPm, barPm1)
-            for h in range(i+1, j):
-                l = h  # placeholder; we add contributions for all (h,l) later
-            # Actually apply:
-            for h in range(i+1, j-1):
-                for l in range(h+1, j):
-                    add = (B_Mc * B_Mp) * (
-                        M1[i+1][h-1] * barPm1[i][l]
-                        + (M1[i+1][h-1] + (B_Mu ** (h-i-1))) * barPm[i][l]
-                    )
-                    P_bar[h][l] += add
-
-    # (C) M_bar propagation (left boundary descending)
-    for p, Mbar in [(2, M2_bar), (1, M1_bar), (0, M0_bar)]:
-        for l in range(1, n+1):
-            for h in range(l, 0, -1):    # h descending
-                # unpaired in multiloop
-                if h-1 >= 1:
-                    Mbar[h-1][l] += Mbar[h][l] * B_Mu
-                # paired branch P(i,k) inside M
-                for i in range(1, h):
-                    k = h-1
-                    if i < k:
-                        P_bar[i][k] += Mbar[h][l] * B_Mp * (M1 if p==2 else M0)[k+1][l]
+    # (B) span-descending pass for bar_P and M_bar
+    for d in range(n - 1, 0, -1):
+        for h in range(1, n - d + 1):
+            l = h + d
+            # ------- P --------
+            # bar_P(h, l)
+            bar_P[h, l] += bar_xi[h] * xi[l+1] \
+                + sum([
+                    B(f_2(i, j, h, l, OMM)) * bar_P[i, j]
+                    for i in range(1, h) for j in range(l + 1, n + 1)
+                ])
+            # bar_P^m(h, l)
+            bar_Pm[h, l] += sum([
+                bar_P[h, j] * M[1, l + 1, j - 1]
+                for j in range (l + 1, n + 1)
+            ])
+            # bar_P^{m+1}(h, l)
+            bar_Pm1[h, l] += sum([
+                bar_P[h, j] * (B(en_Mu) ** (j - l - 1))
+                for j in range (l + 1, n + 1)
+            ])
+            # ------- M0, M1, M2 -------
+            # bar_M2(h, l)
+            bar_M[2, h, l] += bar_M[2, h - 1, l] * B(en_Mu) + bar_P[h - 1, l + 1] * B(en_Mc + en_Mp)
+            # bar_M1(h, l)
+            bar_M[1, h, l] += bar_M[1, h - 1, l] * B(en_Mu) + sum([
+                P[i, h - 1] * B(en_Mp) * bar_M[2, i, l]
+                for i in range(1, h - 1)
+            ])
+            # bar_M0(h, l)
+            bar_M[0, h, l] += bar_M[0, h - 1, l] * B(en_Mu) + sum([
+                P[i, h - 1] * B(en_Mp) * ( bar_M[1, i, l] + bar_M[0, i, l])
+                for i in range(1, h - 1)
+            ])
 
     Z = xi[n]
-    # posterior
     post = [[0.0]*(n+1) for _ in range(n+1)]
     for i in range(1, n+1):
         for j in range(i+1, n+1):
-            post[i][j] = (P[i][j] * P_bar[i][j]) / Z
-    return post, xi_bar, P_bar, (M0_bar, M1_bar, M2_bar)
+            post[i][j] = (P[i][j] * bar_P[i][j]) / Z
+    return post, bar_xi, bar_P, bar_M
