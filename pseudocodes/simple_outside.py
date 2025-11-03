@@ -15,8 +15,8 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
     bar_M = np.zeros((3, n+1, n+1))  # bar_M[0]: M0, bar_M[1]: M1, bar_M[2]: M2
 
     # 集約テーブルの初期化
-    bar_Pm  = np.zeros((n+1, n+1))   # Σ_{j>l} bar_P[i][j] * M1[l+1][j-1]
-    bar_Pm1 = np.zeros((n+1, n+1))   # Σ_{j>l} bar_P[i][j] * B_Mu**(j-l-1)
+    bar_Pm  = np.zeros((n+1, n+1))
+    bar_Pm1 = np.zeros((n+1, n+1))
 
     # (A) xi recursion
     for i in range(1, n + 1): # i = 1, 2, ..., n (0-origin)
