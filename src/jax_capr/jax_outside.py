@@ -7,7 +7,7 @@ from typing import Protocol
 
 import jax.numpy as jnp
 
-from jax_rnafold.common.utils import NBPS, bp_bases
+from jax_rnafold.common.utils import MAX_LOOP, NBPS, bp_bases
 
 
 Array = jnp.ndarray
@@ -108,6 +108,9 @@ def compute_outside(inside: InsideTablesLike, model) -> OutsideComputation:
     bar_P = tables.bar_P
     bar_M = tables.bar_M
     bar_MB = tables.bar_MB
+    bar_OMM = tables.bar_OMM
+
+    two_loop_length = min(seq_len, MAX_LOOP)
 
     # Exterior loop outside propagation.
     for i in range(seq_len):
@@ -233,11 +236,281 @@ def compute_outside(inside: InsideTablesLike, model) -> OutsideComputation:
                 delta_ml = jnp.dot(outer_bar, multi_closing_weights)
                 bar_M = bar_M.at[2, k, l].add(delta_ml)
 
+    # Bulge and internal loop outside propagation.
+    for i in range(seq_len):
+        for j in range(i + 1, seq_len):
+            if j - i < 2:
+                continue
+
+            for bp_idx in range(NBPS):
+                outer = float(bar_P[bp_idx, i, j])
+                if outer == 0.0:
+                    continue
+
+                bi_pair = int(bi[bp_idx])
+                bj_pair = int(bj[bp_idx])
+                bk = bi_pair
+                bl = bj_pair
+
+                # Bulges (right and left).
+                for kl_offset in range(two_loop_length):
+                    l = j - 2 - kl_offset
+                    if l < i + 2:
+                        break
+                    bulge_len = j - l - 1
+                    weight = (
+                        padded_p_seq[i + 1, bk]
+                        * padded_p_seq[l, bl]
+                        * model.en_bulge(bi_pair, bj_pair, bk, bl, bulge_len)
+                        * s_table[bulge_len + 2]
+                    )
+                    bar_P = bar_P.at[bp_idx, i + 1, l].add(outer * weight)
+
+                for kl_offset in range(two_loop_length):
+                    k = i + 2 + kl_offset
+                    if k >= j - 1:
+                        break
+                    bulge_len = k - i - 1
+                    weight = (
+                        padded_p_seq[k, bk]
+                        * padded_p_seq[j - 1, bl]
+                        * model.en_bulge(bi_pair, bj_pair, bk, bl, bulge_len)
+                        * s_table[bulge_len + 2]
+                    )
+                    bar_P = bar_P.at[bp_idx, k, j - 1].add(outer * weight)
+
+                # Precompute mismatch term mmij.
+                mmij = 0.0
+                for bip1 in range(4):
+                    pr_ip1 = float(padded_p_seq[i + 1, bip1])
+                    if pr_ip1 == 0.0:
+                        continue
+                    for bjm1 in range(4):
+                        pr_jm1 = float(padded_p_seq[j - 1, bjm1])
+                        if pr_jm1 == 0.0:
+                            continue
+                        mmij += (
+                            pr_ip1
+                            * pr_jm1
+                            * model.en_il_inner_mismatch(bi_pair, bj_pair, bip1, bjm1)
+                        )
+
+                # 1x1 internal loop.
+                if i + 2 < j - 1:
+                    for bip1 in range(4):
+                        pr_ip1 = float(padded_p_seq[i + 1, bip1])
+                        if pr_ip1 == 0.0:
+                            continue
+                        for bjm1 in range(4):
+                            pr_jm1 = float(padded_p_seq[j - 1, bjm1])
+                            if pr_jm1 == 0.0:
+                                continue
+
+                            pr_ij_mm = pr_ip1 * pr_jm1
+                            k_inner = i + 2
+                            l_inner = j - 2
+                            weight_11 = (
+                                padded_p_seq[k_inner, bk]
+                                * padded_p_seq[l_inner, bl]
+                                * pr_ij_mm
+                                * model.en_internal(
+                                    bi_pair,
+                                    bj_pair,
+                                    bk,
+                                    bl,
+                                    bip1,
+                                    bjm1,
+                                    bip1,
+                                    bjm1,
+                                    1,
+                                    1,
+                                )
+                                * s_table[4]
+                            )
+                            bar_P = bar_P.at[bp_idx, k_inner, l_inner].add(
+                                outer * weight_11
+                            )
+
+                            # 1xn and nx1 cases.
+                            for z_offset in range(two_loop_length):
+                                l_right = j - 3 - z_offset
+                                if l_right < i + 3:
+                                    break
+                                bulge_r = j - l_right - 1
+                                for b in range(4):
+                                    pr_b = float(padded_p_seq[l_right + 1, b])
+                                    if pr_b == 0.0:
+                                        continue
+                                    weight_r = (
+                                        padded_p_seq[i + 2, bk]
+                                        * padded_p_seq[l_right, bl]
+                                        * pr_b
+                                        * pr_ij_mm
+                                        * model.en_internal(
+                                            bi_pair,
+                                            bj_pair,
+                                            bk,
+                                            bl,
+                                            bip1,
+                                            bjm1,
+                                            bip1,
+                                            b,
+                                            1,
+                                            bulge_r,
+                                        )
+                                        * s_table[bulge_r + 3]
+                                    )
+                                    bar_P = bar_P.at[bp_idx, i + 2, l_right].add(
+                                        outer * weight_r
+                                    )
+
+                            for z_offset in range(two_loop_length):
+                                k_left = i + 3 + z_offset
+                                if k_left >= j - 2:
+                                    break
+                                bulge_l = k_left - i - 1
+                                for b in range(4):
+                                    pr_b = float(padded_p_seq[k_left - 1, b])
+                                    if pr_b == 0.0:
+                                        continue
+                                    weight_l = (
+                                        padded_p_seq[k_left, bk]
+                                        * padded_p_seq[j - 2, bl]
+                                        * pr_b
+                                        * pr_ij_mm
+                                        * model.en_internal(
+                                            bi_pair,
+                                            bj_pair,
+                                            bk,
+                                            bl,
+                                            bip1,
+                                            bjm1,
+                                            b,
+                                            bjm1,
+                                            bulge_l,
+                                            1,
+                                        )
+                                        * s_table[bulge_l + 3]
+                                    )
+                                    bar_P = bar_P.at[bp_idx, k_left, j - 2].add(
+                                        outer * weight_l
+                                    )
+
+                # Special 2x2, 2x3, 3x2 loops.
+                for k_offset in range(min(3, two_loop_length)):
+                    k_inner = i + k_offset + 2
+                    if k_inner >= j - 1:
+                        break
+                    for l_offset in range(min(3, two_loop_length)):
+                        l_inner = j - l_offset - 2
+                        if l_inner <= k_inner:
+                            continue
+                        lup = k_inner - i - 1
+                        rup = j - l_inner - 1
+                        if (lup, rup) not in {(2, 2), (2, 3), (3, 2)}:
+                            continue
+
+                        for bip1 in range(4):
+                            pr_ip1 = float(padded_p_seq[i + 1, bip1])
+                            if pr_ip1 == 0.0:
+                                continue
+                            for bjm1 in range(4):
+                                pr_jm1 = float(padded_p_seq[j - 1, bjm1])
+                                if pr_jm1 == 0.0:
+                                    continue
+                                for bkm1 in range(4):
+                                    pr_km1 = float(padded_p_seq[k_inner - 1, bkm1])
+                                    if pr_km1 == 0.0:
+                                        continue
+                                    for blp1 in range(4):
+                                        pr_lp1 = float(padded_p_seq[l_inner + 1, blp1])
+                                        if pr_lp1 == 0.0:
+                                            continue
+                                        weight_special = (
+                                            padded_p_seq[k_inner, bk]
+                                            * padded_p_seq[l_inner, bl]
+                                            * pr_ip1
+                                            * pr_jm1
+                                            * pr_km1
+                                            * pr_lp1
+                                            * model.en_internal(
+                                                bi_pair,
+                                                bj_pair,
+                                                bk,
+                                                bl,
+                                                bip1,
+                                                bjm1,
+                                                bkm1,
+                                                blp1,
+                                                lup,
+                                                rup,
+                                            )
+                                            * s_table[lup + rup + 2]
+                                        )
+                                        bar_P = bar_P.at[bp_idx, k_inner, l_inner].add(
+                                            outer * weight_special
+                                        )
+
+                # General loops via OMM.
+                for k_offset in range(two_loop_length):
+                    k_inner = i + k_offset + 2
+                    if k_inner >= j - 1:
+                        break
+                    for l_offset in range(two_loop_length):
+                        l_inner = j - l_offset - 2
+                        if l_inner <= k_inner:
+                            continue
+
+                        lup = k_inner - i - 1
+                        rup = j - l_inner - 1
+
+                        if lup <= 1 or rup <= 1:
+                            continue
+                        if (lup, rup) in {(2, 2), (2, 3), (3, 2)}:
+                            continue
+
+                        coeff = (
+                            mmij
+                            * model.en_internal_init(lup + rup)
+                            * model.en_internal_asym(lup, rup)
+                            * s_table[lup + rup + 2]
+                        )
+                        bar_OMM = bar_OMM.at[k_inner, l_inner].add(outer * coeff)
+
+    # Propagate bar_OMM back to bar_P using outer mismatch definition.
+    for i in range(1, seq_len):
+        for j in range(i, seq_len):
+            bar_val = float(bar_OMM[i, j])
+            if bar_val == 0.0:
+                continue
+
+            for bp_idx in range(NBPS):
+                bi_pair = int(bi[bp_idx])
+                bj_pair = int(bj[bp_idx])
+
+                for a in range(4):
+                    pr_im1 = float(padded_p_seq[i - 1, a]) if i - 1 >= 0 else 0.0
+                    if pr_im1 == 0.0:
+                        continue
+                    for b in range(4):
+                        pr_jp1 = float(padded_p_seq[j + 1, b]) if j + 1 <= seq_len else 0.0
+                        if pr_jp1 == 0.0:
+                            continue
+                        weight = (
+                            bar_val
+                            * padded_p_seq[i, bi_pair]
+                            * padded_p_seq[j, bj_pair]
+                            * pr_im1
+                            * pr_jp1
+                            * model.en_il_outer_mismatch(bi_pair, bj_pair, a, b)
+                        )
+                        bar_P = bar_P.at[bp_idx, i, j].add(weight)
+
     tables = OutsideComputation(
         bar_E=bar_E,
         bar_P=bar_P,
         bar_M=bar_M,
         bar_MB=bar_MB,
-        bar_OMM=tables.bar_OMM,
+        bar_OMM=bar_OMM,
     )
     return tables
