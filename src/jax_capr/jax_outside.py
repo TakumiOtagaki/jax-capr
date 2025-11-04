@@ -98,6 +98,102 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return bar_xi_out
 
 
+    # ---------- copy-pasted from jax_rnafold.d0.ss line123 - 213 ----------
+        @jit
+    def pr_special_hairpin(id, i, j, padded_p_seq):
+        start_pos = special_hairpin_start_pos[id]
+        id_len = special_hairpin_lens[id]
+        def get_sp_hairpin_nuc_prob(k_offset):
+            k = i + 1 + k_offset
+            cond = (k >= i+1) & (k < j)
+            idx_pos = start_pos + 1 + k_offset
+            return jnp.where(cond, padded_p_seq[k, special_hairpin_idxs[idx_pos]], 1.0)
+        k_offsets = jnp.arange(max_sp_hairpin_len_up)
+        prs = vmap(get_sp_hairpin_nuc_prob)(k_offsets)
+        pr = 1 # we know i and j match
+        pr *= jnp.prod(prs)
+        return pr
+
+    @jit
+    def psum_hairpin_special_correction(bi, bj, i, j, padded_p_seq):
+
+        up2 = j-i+1
+        u = j - i - 1
+
+        def special_hairpin_correction(id):
+            sp_hairpin_len = special_hairpin_lens[id]
+            start_pos = special_hairpin_start_pos[id]
+            end_pos = start_pos + sp_hairpin_len - 1
+
+            id_valid = (special_hairpin_lens[id] == up2) \
+                       & (special_hairpin_idxs[start_pos] == bi) \
+                       & (special_hairpin_idxs[end_pos] == bj)
+
+            bjm1 = special_hairpin_idxs[end_pos - 1]
+            bip1 = special_hairpin_idxs[start_pos + 1]
+            correction = pr_special_hairpin(id, i, j, padded_p_seq) \
+                         * em.en_hairpin_not_special(bi, bj, bip1, bjm1, sp_hairpin_len - 2)
+            return jnp.where(id_valid, correction, 0.0)
+
+        summands = vmap(special_hairpin_correction)(jnp.arange(n_special_hairpins))
+        sm = jnp.sum(summands)
+        return sm
+
+    @jit
+    def psum_hairpin_special(bi, bj, i, j, padded_p_seq):
+
+        up2 = j-i+1
+
+        def special_hairpin(id):
+            sp_hairpin_len = special_hairpin_lens[id]
+            start_pos = special_hairpin_start_pos[id]
+            end_pos = start_pos + sp_hairpin_len - 1
+
+            id_valid = (special_hairpin_lens[id] == up2) \
+                       & (special_hairpin_idxs[start_pos] == bi) \
+                       & (special_hairpin_idxs[end_pos] == bj)
+
+            val = pr_special_hairpin(id, i, j, padded_p_seq) * em.en_hairpin_special(id)
+            return jnp.where(id_valid, val, 0.0)
+
+        summands = vmap(special_hairpin)(jnp.arange(n_special_hairpins))
+        sm = jnp.sum(summands)
+        return sm
+
+
+    @jit
+    def psum_hairpin_not_special(bi, bj, i, j, padded_p_seq):
+        # Special case for HAIRPIN<=1
+        # Necessary to respect conditional probability the mismatch
+
+        u = j-i-1
+
+        def u1_fn(bip1):
+            return padded_p_seq[i+1, bip1] * \
+                em.en_hairpin_not_special(bi, bj, bip1, bip1, 1)
+        u1_fn = vmap(u1_fn)
+
+        def u_general_fn(bip1, bjm1):
+            return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
+                em.en_hairpin_not_special(bi, bj, bip1, bjm1, j-i-1)
+        u_general_fn = vmap(vmap(u_general_fn, (0, None)), (None, 0))
+
+
+        return jnp.where(u == 0, em.en_hairpin_not_special(bi, bj, bj, bi, 0),
+                         jnp.where(u == 1,
+                                   jnp.sum(u1_fn(N4)),
+                                   jnp.sum(u_general_fn(N4, N4))))
+
+    @jit
+    def psum_hairpin(bi, bj, i, j, padded_p_seq):
+        return psum_hairpin_not_special(bi, bj, i, j, padded_p_seq) \
+            + psum_hairpin_special(bi, bj, i, j, padded_p_seq) \
+            - psum_hairpin_special_correction(bi, bj, i, j, padded_p_seq)
+
+
+    # ----------------- end of copy-paste ----------------------------------
+
+
     def fill_bar_Ps(
         carry: OutsideCarry,
         inside: InsideTablesLike,
@@ -121,10 +217,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
 
     def fill_bar_OMM(
-        carry: OutsideCarry,
-        inside: InsideTablesLike,
-        model,
         i: int,
+        bar_P: Array,
+        padded_p_seq: Array,
+        n: int,
     ) -> Array:
         """Accumulate general internal-loop contributions into bar_OMM."""
 
@@ -153,7 +249,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_Ps(carry, inside, em, i)
-            bar_OMM = fill_bar_OMM(carry, inside, em, i)
+            bar_OMM = fill_bar_OMM(i, bar_P, padded_p_seq, seq_len)
             bar_MB = fill_bar_MB(carry, inside, i)
             bar_M = fill_bar_M(carry, inside, i)
 
