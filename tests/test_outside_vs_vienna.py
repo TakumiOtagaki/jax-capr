@@ -24,18 +24,28 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 
 
 def test_inside_outside_matches_vienna():
-    model = energy.StandardNNModel(params_path=TURNER_1999)
+    model = energy.JaxNNModel(params_path=TURNER_1999)
     sequences = [
         "AUGGCUACGUAC",
         "CCGAUAGCUAAG",
         "GGCAAUCCGAUC",
     ]
-
+    print("Testing inside-outside against ViennaRNA...")
     for seq in sequences:
+        print(f"Sequence: {seq}")
         ours = compute_inside_outside(seq, model)
-        ref = vienna_bpp(seq)
+        ref = vienna_bpp(seq, str(TURNER_1999))
         diff = ours.bpp - ref
         max_abs = np.max(np.abs(diff))
         mean_abs = np.mean(np.abs(diff))
+        print(f"Max abs difference: {max_abs:.3e}")
+        print(f"Mean abs difference: {mean_abs:.3e}")
         assert max_abs < 1e-6
         assert mean_abs < 1e-7
+
+def main():
+    test_inside_outside_matches_vienna()
+    print("All tests passed.")
+
+if __name__ == "__main__":
+    main()
