@@ -135,7 +135,15 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
 
     @jit
-    def psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM):
+    def psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM): 
+        """
+        コピーペーストして、引数と関数名だけ変更した。
+        コメントをつけているように、個々の関数は結構やばいし、追加すべき変数がありそう。
+        mmij は OMM の逆バージョンみたいな感じかも？違うかな
+        """
+        # bip1 --> bh, bjm1 --> bl
+        # ここどうすればいいか全くわからない。bip1, bijm1 としたいけどそもそも i, j をまだ知らない.
+            # TODO: おそらく OMM のように事前計算する必要がありそう。
         def get_mmij_term(bip1, bjm1):
             return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
                 em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
@@ -262,7 +270,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
 
     def fill_bar_Ps(
-            h: int,
+            d: int,
             padded_p_seq: Array,
             OMM: Array,
             ML: Array,
@@ -271,11 +279,13 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_Pm: Array,
             bar_Pm1: Array,
             bar_E: Array,
-    ) -> Array:
+        ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
         def get_bp_stack(bp_idx, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
             # bp_idx は bp_idx_of_ij となっていることに注意する。
+            # l - h = d ゆえ h = l - d
+            h = l - d
             bp = bp_bases[bp_idx]
             bhm1 = int(bp[0]) # bi; i = h - 1
             blp1 = int(bp[1]) # bj; j = l + 1
@@ -284,19 +294,27 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
         def get_bp_l_sm(bp_idx, l): # ある l に対してそれに対応する summation を計算する。
             # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
+            h = l - d
             bp = bp_bases[bp_idx]
             bh = int(bp[0]) # bi; i = h - 1
             bl = int(bp[1]) # bj; j = l + 1
+            sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
             sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM)
+
+            # stacks
+            stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
         
         def get_bp_all_ls(bp_idx):
             ls = jnp.arange(seq_len + 1)
             return vmap(get_bp_l_sm, (None, 0))(bp_idx, ls)
         
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
-        bar_P = bar_P.at[:, h].set(all_bp_js)
+        hs, ls = jnp.arange(seq_len + 1 - d), jnp.arange(d, seq_len + 1)
+        bar_P = bar_P.at[:, hs, ls].set(all_bp_js)
+
+        return bar_P
 
     def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
         """Propagate multibranch helper contributions at position i."""
