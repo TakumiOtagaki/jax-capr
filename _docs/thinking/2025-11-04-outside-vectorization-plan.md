@@ -136,6 +136,7 @@ bar_P = fill_bar_P_from_OMM(
     padded_p_seq,
     model,
 )
+bar_P = bar_P + carry_final.bar_Pm_contrib  # exterior由来の加算を span 更新前に反映するイメージ
 ```
 
 各 kernel の戻り値は PyTree を不変更新する設計にし、`scan` 内では `at[...]` を用いた永続化更新のみ行う。`outside_paired_core` の二重ループは offset 配列を事前生成し、`jnp.where` マスクで合法範囲を抽出する方針。
