@@ -18,7 +18,7 @@ from jax_rnafold.common.checkpoint import checkpoint_scan
 from .jax_inside import InsideComputation
 
 jax.config.update("jax_enable_x64", True)
-
+f64 = jnp.float64
 Array = jnp.ndarray
 
 class InsideTablesLike(Protocol):
@@ -77,18 +77,25 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     n_special_hairpins = em.n_special_hairpins
 
 
-    @jit
-    def fill_bar_E(bar_E, E, P, p_seq, em, n):
-        def body(i, carry):
-            # i は 2..n
-            # sum_{j=0..i-2} bar_xi[j] * P[j, i-1] = dot(bar_xi[:i-1], P[:i-1, i-1])
-            # i==1 のときは空スライスの内積=0.0 になるのでそのままでOK
-            contrib = jnp.dot(carry[:i-1], P[:i-1, i-1])
-            incr = E[i-1] + contrib
-            return carry.at[i].add(incr)
 
-        # 1 から n まで JAX 制御フローで回す（Python ループは使わない）
-        bar_xi_out = lax.fori_loop(2, n+1, body, bar_E)
+
+    @jit
+    def fill_bar_E(bar_E, bar_P, padded_p_seq, em, n):
+        def body(i, carry):
+            def get_j_bp_term(j, bp_idx):
+                cond = (j < i - 1)
+                bp = bp_bases[bp_idx]
+                bj = bp[0]
+                bim1 = bp[1]
+                base_en = bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
+                return jnp.where(cond, base_en * bar_P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
+            get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
+            sm = s_table[1] * bar_E[i-1] + jnp.sum(get_all_terms(jnp.arange(seq_len), jnp.arange(NBPS)))
+            bar_E = bar_E.at[i].set(sm)
+            return bar_E, None
+
+        # 2 から n まで JAX 制御フローで回す（Python ループは使わない）
+        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, n+1))
         return bar_xi_out
 
 
@@ -103,8 +110,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_Pm = jnp.zeros_like(inside.P)
         bar_Pm1 = jnp.zeros_like(inside.P)
 
+        padded_p_seq = jnp.zeros((seq_len+1, 4), dtype=f64)
+        padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
+
         # first off, fill bar_E.
-        bar_E = fill_bar_E(bar_E, inside.E, inside.P, p_seq, em, seq_len)
+        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, em, seq_len)
 
         # filling the other tables
         def fill_tables(carry, i):
