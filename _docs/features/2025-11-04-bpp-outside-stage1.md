@@ -20,27 +20,26 @@
 - スケーリングテーブル `s_table` や再利用する energy パラメータ（`en_*`）の参照が必要。
 
 ## outside 再帰の要件（BPP 用）
-- `bar_P[bp, i, j]`（paired outside）を計算する。forward で `P` を更新している各項に対し逆向きの寄与を実装する。
+- `bar_P[bp, i, j]`（paired outside）を計算する。forward で `P` を更新している各項に対し、研究ノートと擬似コードで示された **二次構造遷移ベースの書き下し** をそのまま反転させる。
   - **Hairpin**: outside 伝播なし（終端でのみ寄与）。
   - **Bulge/Internal 特殊ケース**（1×n, 2×2, 2×3, 3×2 等）:
     - forward で参照した `P[bp, i+1, l]` や `P[bp, k, j-1]` に、対応する Boltzmann 因子・塩基確率・`s_table` を掛けて `bar_P` に加算。
-  - **一般内部ループ**（`OMM` 経由）:
-    - forward で `P[bp, i, j] += coeff * OMM[k, l]` を行っているので、outside では `bar_OMM[k, l] += bar_P[bp, i, j] * coeff`。
-    - ここで `coeff = mmij * en_internal_init(lup+rup) * en_internal_asym(lup, rup) * s_table[lup+rup+2]`。
-  - **OMM から P への逆伝播**:
-    - `bar_P[bp, i, j] += bar_OMM[i, j] * padded_p_seq[i-1, a] * padded_p_seq[j+1, b] * padded_p_seq[i, bi] * padded_p_seq[j, bj] * en_il_outer_mismatch(...)` を `(a, b)` で総和。
+  - **一般内部ループ**（`OMM` を含む `B(f_2)` 項）:
+    - `OMM` は forward 同様に保持し、outside では `bar_OMM` を用意する。
+    - forward で `P[bp, i, j] += coeff · OMM[h, l]` が足し込まれた箇所に対し、outside では `bar_OMM[h, l] += bar_P[bp, i, j] · coeff` を積算する。
+    - 同時に `bar_P[bp, h, l] += bar_OMM[h, l] · padded_p_seq[...] · en_il_outer_mismatch(...)` を行い、`OMM` に畳み込まれた外側ミスマッチ係数を `P` へ戻す。
   - **Stacking**:
     - forward で参照した `P[bp', i+1, j-1]` に対し、`en_stack` と塩基確率を掛けて outside を加算。
   - **Multibranch 関連**:
     - `bar_P` から `bar_ML[2, i+1, j-1]` へ閉鎖ペナルティ `en_multi_closing` を掛けて伝播。
-    - `ML` テーブル更新式の逆向き再帰を実装し、`bar_ML` → `bar_MB` → `bar_P` へと波及させる。
+    - `ML` の逆向き再帰では `bar_ML` を更新し、さらに `bar_MB` テーブルを用いて `bar_P` へ寄与を戻す（forward で `MB` に畳まれた枝係数を outside で保持する）。
 - exterior ループ:
   - `E[i] = E[i+1]*s_table[1] + Σ_j Σ_bp (...)` に対して outside を実装し、`bar_E[0] = 1` として `bar_P` へ寄与を伝搬する。
 - `bar_M` など multibranch outside も Stage 1 で計算しておく（将来ループ確率で必要になる）。
 
 ## 数値スケーリング要件
 - inside と同じ `s_table` を outside にも適用し、forward と逆方向のスケールがキャンセルするようにする。
-- `bar_xi`（=`bar_E`）の初期値は `bar_E[0] = 1`（pseudocode 由来の `xi` は 1-indexed を想定）。`Z = E[0]` と `Z = xi[1]` の対応関係を実装前に確認する。
+- `bar_xi`（=`bar_E`）の初期値は `bar_E[0] = 1`（pseudocode 由来の `xi` は 1-indexed を想定）。分配関数は jax-rnafold 実装に合わせて `Z = E[0]` を利用する。
 - JAX 実装では underflow/overflow 防止のため、各再帰の加算前にブロードキャスト済みの `s_table` を必ず掛ける。
 
 ## 実装方針
@@ -49,18 +48,17 @@
 - メモリを抑えるため `checkpoint_scan` を outside でも利用する方向で設計し、必要な中間値だけ保持する。
 - 非 ASCII コメントは避け、必要な場合のみ短い説明コメントを残す。
 
-## API 設計メモ
-- `InsideTables`（dataclass）: inside テーブル (`P`, `ML`, `MB`, `OMM`, `E`, `partition`) を外部へ公開。
-- `OutsideTables`（仮称）: outside 値 (`bar_P`, `bar_M`, `bar_MB`, `bar_E`, `bar_OMM`) を保持。Stage 1 では loop profile 用の項目も確保するが `None` で初期化可能。
+- `OutsideTables`（dataclass）: `bar_P`, `bar_M`, `bar_MB`, `bar_E`, `bar_OMM` を保持。後続フェーズで loop profile 用に項目を追加できるよう拡張余地を残す（値は Stage 1 時点で `None` 設定可）。
 - `InsideOutsideResult`: 
   - `partition: float`
   - `bpp: Array`
-  - `loop_profile: Optional[LoopProfile]`（Stage 1 は `None`）
-  - 必要なら inside/outside テーブル参照をオプションで持たせる。
-- 公開関数:
+  - `loop_profile: Optional[LoopProfile]`（Stage 1 は `None` 固定）
+  - `inside: Optional[InsideTables]`, `outside: Optional[OutsideTables]` を保持する場合は別コンストラクタや専用関数で提供し、スイッチ引数は導入しない。
+- 公開関数候補（全て引数・戻り値を固定し、フラグを避ける）:
   1. `compute_inside_tables(seq: str | Array, model) -> InsideTables`
-  2. `compute_inside_outside(seq, model, *, return_tables: bool = False) -> InsideOutsideResult`
-  - スイッチ的な引数は避ける指針があるため、テーブルを取得したい場合は別関数やメソッドで返す案を検討（要調整）。
+  2. `compute_outside_tables(seq: str | Array, model) -> OutsideTables`（必要に応じて inside を内部で再利用）
+  3. `compute_bpp_matrix(seq: str | Array, model) -> InsideOutsideResult`
+  - inside/outside テーブルを併せて欲しい場合は `compute_inside_outside(seq, model) -> (InsideTables, OutsideTables, InsideOutsideResult)` 等、戻り値で明示的に返す案を検討。
 
 ## テスト & 検証
 - 既存テスト `tests/test_outside_vs_vienna.py` を再生可能にする。`ViennaRNA` Turner1999 と比較して最大誤差 `1e-6`、平均誤差 `1e-7` 以下を目標。
@@ -77,6 +75,6 @@
 - GPU での実行を想定し、JAX の X64 モード（`jax_enable_x64=True`）は既定で有効化済み。
 
 ## 未確定事項・フォローアップ
-- `xi` / `E` のインデックス整合（`Z = E[0]` vs `xi[1]`）を `notes/jax-capr_labnote_1104.pdf` で確認し、実装前に明文化する。
-- outside の一般内部ループで用いる `s_table` 係数の正確な指数（`lup+rup+2`）をソースから再度検証する。
+- 一般内部ループ（`B(f_2)`）のスケーリング係数や指数（例: `lup+rup+2`）を jax-rnafold の forward 実装と突き合わせて確定する。
+- multibranch outside の逆伝播順序・境界条件を擬似コードと一致させるため、`notes/jax-capr_labnote_1104.pdf` の該当節と照合する。
 - `LoopProfile` のデータ設計（hairpin 等の保持形式）を Stage 2 要件として別途策定する。
