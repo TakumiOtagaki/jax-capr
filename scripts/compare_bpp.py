@@ -94,7 +94,7 @@ def main() -> None:
     args = parser.parse_args()
 
     seqs = random_sequences(args.length, args.count, args.seed)
-    model = energy.StandardNNModel(params_path=TURNER_1999)
+    model = energy.JaxNNModel(params_path=TURNER_1999)
 
     print(f"Comparing {len(seqs)} sequences (length={args.length})")
     for res in compare_sequences(seqs, model):
