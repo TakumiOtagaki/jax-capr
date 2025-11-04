@@ -52,14 +52,14 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
             ])
             # ------- M0, M1, M2 -------
             # bar_M2(h, l)
-            bar_M[2, h, l] += bar_M[2, h - 1, l] * B(en_Mu) + bar_P[h - 1, l + 1] * B(en_Mc + en_Mp)
+            bar_M[2, h, l] += s(1) * bar_M[2, h - 1, l] * B(en_Mu) + s(2) * bar_P[h - 1, l + 1] * B(en_Mc + en_Mp)
             # bar_M1(h, l)
-            bar_M[1, h, l] += bar_M[1, h - 1, l] * B(en_Mu) + sum([
+            bar_M[1, h, l] += s(1) * bar_M[1, h - 1, l] * B(en_Mu) + sum([
                 P[i, h - 1] * B(en_Mp) * bar_M[2, i, l]
                 for i in range(1, h - 1)
             ])
             # bar_M0(h, l)
-            bar_M[0, h, l] += bar_M[0, h - 1, l] * B(en_Mu) + sum([
+            bar_M[0, h, l] += s(1) * bar_M[0, h - 1, l] * B(en_Mu) + sum([
                 P[i, h - 1] * B(en_Mp) * ( bar_M[1, i, l] + bar_M[0, i, l])
                 for i in range(1, h - 1)
             ])
