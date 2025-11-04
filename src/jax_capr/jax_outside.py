@@ -192,11 +192,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     @jit
     def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
-        def get_bp_kl(bp_idx_ij, ij_offset):
+        def get_bp_ij(bp_idx_ij, ij_offset):
             bp = bp_bases[bp_idx_ij]
             bi = int(bp[0])
             bj = int(bp[1])
-            bp_ij_sm = 0
+            bp_ij_sm = jnp.zeros((), dtype=bar_P.dtype)
 
             # Right bulge, note i = h - 1
             j = l + 2 + ij_offset
@@ -216,12 +216,12 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
             return bp_ij_sm
 
-        def get_bp_all_kl(bp_idx):
-            all_kl_offsets = jnp.arange(two_loop_length)
-            all_bp_kl_sms = vmap(get_bp_kl, (None, 0))(bp_idx, all_kl_offsets)
-            return jnp.sum(all_bp_kl_sms)
+        def get_bp_all_ij(bp_idx):
+            all_ij_offsets = jnp.arange(two_loop_length)
+            all_bp_ij_sms = vmap(get_bp_ij, (None, 0))(bp_idx, all_ij_offsets)
+            return jnp.sum(all_bp_ij_sms)
 
-        all_bp_sms = vmap(get_bp_all_kl)(jnp.arange(NBPS))
+        all_bp_sms = vmap(get_bp_all_ij)(jnp.arange(NBPS))
         return jnp.sum(all_bp_sms)
 
 
