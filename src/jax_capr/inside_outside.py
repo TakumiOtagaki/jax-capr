@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+from . import jax_inside
+
 import jax.numpy as jnp
 
 
@@ -13,7 +15,7 @@ Array = jnp.ndarray
 
 @dataclass(slots=True)
 class InsideTables:
-    """Inside DP tables returned by jax-rnafold forward recursion."""
+    """Inside DP tables and metadata returned by the forward recursion."""
 
     partition: float
     E: Array
@@ -21,6 +23,9 @@ class InsideTables:
     ML: Array
     MB: Array
     OMM: Array
+    p_seq: Array
+    s_table: Array
+    scale: float
 
 
 @dataclass(slots=True)
@@ -45,9 +50,35 @@ class InsideOutsideResult:
     outside: Optional[OutsideTables] = None
 
 
-def compute_inside_tables(sequence: str | Array, model) -> InsideTables:
+def compute_inside_tables(
+    sequence: str | Array,
+    model,
+    *,
+    max_loop: int | None = None,
+    scale: float | None = None,
+    checkpoint_every: int | None = 10,
+) -> InsideTables:
     """Run the inside DP and return tables needed by the outside recursion."""
-    raise NotImplementedError("Inside tables computation is not implemented yet.")
+    inside = jax_inside.compute_inside(
+        sequence,
+        model,
+        max_loop=max_loop,
+        scale=scale,
+        checkpoint_every=checkpoint_every,
+    )
+
+    partition = float(inside.partition)
+    return InsideTables(
+        partition=partition,
+        E=inside.E,
+        P=inside.P,
+        ML=inside.ML,
+        MB=inside.MB,
+        OMM=inside.OMM,
+        p_seq=inside.p_seq,
+        s_table=inside.s_table,
+        scale=inside.scale,
+    )
 
 
 def compute_outside_tables(sequence: str | Array, model) -> OutsideTables:
