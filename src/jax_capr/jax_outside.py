@@ -292,10 +292,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             return bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
                 padded_p_seq[l+1, blp1]*em.en_stack(bhm1, blp1, bh, bl)
 
-        def get_bp_l_sm(bp_idx, l): # ある l に対してそれに対応する summation を計算する。
+        def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
             # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
             h = l - d
-            bp = bp_bases[bp_idx]
+            bp = bp_bases[bp_idx_hl]
             bh = int(bp[0]) # bi; i = h - 1
             bl = int(bp[1]) # bj; j = l + 1
             sm = jnp.zeros((), dtype=bar_P.dtype)
