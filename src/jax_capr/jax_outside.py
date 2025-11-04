@@ -348,7 +348,16 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def fill_bar_M(d: int, bar_M: Array, bar_P: Array, padded_p_seq: Array,
                    ML: Array, MB: Array) -> Array:
         # TODO: MB をどうやって使うのかまだわからない...
-        """Propagate multibranch DP contributions at position i."""
+        """
+        以下を全ての h, l (l - h = d) について計算する。
+        bar_M(2, h, l) & := s(1) bar_M(2, h-1, l) B(M_u) + s(2) bar_P(h - 1, l + 1) em.en_multi_closing(bhm1, blp1) \\
+        bar_M(1, h, l) & := s(1) bar_M(1, h-1, l) B(M_u) 
+        + \sum_{i < h-1}  P(i, h-1) em.en_multi_branch(bi, bhm1) * bar_M(2, i, l) \\
+        bar_M(0, h, l) & := s(1) bar_M(0, h-1, l) B(M_u) 
+        + \sum_{i < h-1} P(i, h-1) em.en_multi_branch(bi, bhm1) * \left(
+        bar_M(0, i, l) + bar_M(1, i, l)
+        \right)
+        """
         # 一旦 forward を貼り付けてます↓
 
 
@@ -373,8 +382,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         ML: Array,
         bar_Pm: Array,
     ) -> Array:
-        """Propagate bar_Pm at position i."""
-
+        """
+        Pm[i, l] = \sum_{j} (l < j) s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j] * ML[1, l+1, j-1]
+        を同じ対角線上の i,l 全てについて計算する: l - i = d
+        """
         raise NotImplementedError
     
     def fill_bar_Pm1(
@@ -382,7 +393,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         padded_p_seq: Array,
         bar_P: Array,
     ) -> Array:
-        """Propagate bar_Pm1 at position i."""
+        """
+        Pm1[i, l] = \sum_{j} (l < j) (s_table[1] * em.en_multi_unpaired())**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
+        を同じ対角線上の i,l 全てについて計算する: l - i = d
+        """
 
         raise NotImplementedError
 
