@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from . import jax_inside
+from . import jax_outside
 
 import jax.numpy as jnp
 
@@ -83,7 +84,15 @@ def compute_inside_tables(
 
 def compute_outside_tables(sequence: str | Array, model) -> OutsideTables:
     """Run the outside DP using inside tables as prerequisites."""
-    raise NotImplementedError("Outside tables computation is not implemented yet.")
+    inside = compute_inside_tables(sequence, model)
+    outside = jax_outside.compute_outside(inside, model)
+    return OutsideTables(
+        bar_E=outside.bar_E,
+        bar_P=outside.bar_P,
+        bar_M=outside.bar_M,
+        bar_MB=outside.bar_MB,
+        bar_OMM=outside.bar_OMM,
+    )
 
 
 def compute_inside_outside(sequence: str | Array, model) -> InsideOutsideResult:
