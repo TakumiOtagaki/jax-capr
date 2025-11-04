@@ -8,6 +8,9 @@
 | _docs/deleted/  | 削除・廃止した機能やファイルの履歴を残す | 削除理由、影響範囲、代替手段、再発防止策を記録する                               |
 
 
+積極的に記録していってね。日付は `date` などで明らかにしてから記録してね。
+
+
 # この repo の概要
 ここの repo では CapR という Rfold ベースで書かれた software を、
 jax-rnafold という McCaskill ベースで書かれた partition function 計算のための software によって書き直す project を行います。
@@ -20,7 +23,7 @@ jax-rnafold という McCaskill ベースで書かれた partition function 計�
 
  - pseudocodes/ 以下には outside algorithm の擬似コードが置かれています。simple_outside.py は scaling なし、simple_outside_scaled.py は scaling ありのものです。
    - scaling ありのものを実装すれば良いです。
- - 重要なこととして、本質的な情報をたくさん備えている notes/jax-capr - メンバー_TakumiOtagaki_研究進捗 - asailab.esa.io.pdf
+ - 重要なこととして、本質的な情報をたくさん備えている `notes/jax-capr_labnote_1104.pdf` があります。こちらをよく参照してくださいね。
 
 ## 具体的な実装のイメージ
  -  jax-rnafold の inside algorithm を実装している部分（submodules/jax-rnafold/src/jax_rnafold/d0/ss.py の line 432-462 あたり）を丸ごと借りてきて、それを用いて inside 変数を計算する
