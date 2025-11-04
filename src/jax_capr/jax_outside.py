@@ -325,14 +325,14 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
             # Multi-loops
             sm += get_bp_l_multi_sm(l)
+            cond = (1 <= h) & (l < seq_len - 1) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
+            return jnp.where(cond, sm, P[bp_idx_hl, h, l])
 
-            return 
 
-
-        def get_bp_all_ls(bp_idx):
+        def get_bp_all_ls(bp_idx_hl):
             ls = jnp.arange(seq_len + 1)
-            return vmap(get_bp_l_sm, (None, 0))(bp_idx, ls)
-        
+            return vmap(get_bp_l_sm, (None, 0))(bp_idx_hl, ls)
+
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
         hs, ls = jnp.arange(seq_len + 1 - d), jnp.arange(d, seq_len + 1)
         bar_P = bar_P.at[:, hs, ls].set(all_bp_js)
