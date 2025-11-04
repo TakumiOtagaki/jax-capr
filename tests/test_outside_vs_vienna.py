@@ -10,7 +10,8 @@ from jax_rnafold.d0 import energy
 
 
 def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
-    RNA.params_load_RNA_Turner1999()
+    # RNA.params_load_RNA_Turner1999()
+    RNA.params_load_RNA_Turner2004()
     md = RNA.md()
     md.dangles = 0
     fc = RNA.fold_compound(seq, md)
