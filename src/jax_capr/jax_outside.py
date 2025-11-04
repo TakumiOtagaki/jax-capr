@@ -269,7 +269,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     # ----------------- end of copy-paste ----------------------------------
 
 
-    def fill_bar_Ps(
+    def fill_bar_P(
             d: int,
             padded_p_seq: Array,
             OMM: Array,
@@ -375,7 +375,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         def fill_tables_by_step(carry, d):
             bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
 
-            bar_P = fill_bar_Ps(
+            bar_P = fill_bar_P(
                 d, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
             )
             # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
