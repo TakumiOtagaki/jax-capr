@@ -135,7 +135,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
 
     @jit
-    def psum_outer_internal_loops(bi, bj, i, j, padded_p_seq, P, OMM):
+    def psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM):
         def get_mmij_term(bip1, bjm1):
             return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
                 em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
@@ -288,8 +288,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bh = int(bp[0]) # bi; i = h - 1
             bl = int(bp[1]) # bj; j = l + 1
 
-            sm = psum_hairpin(bh, bl, h, l, padded_p_seq)
-            sm += psum_bulges(bh, bl, h, l, padded_p_seq, P)
+            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
+            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM)
         
         def get_bp_all_ls(bp_idx):
             ls = jnp.arange(seq_len + 1)
@@ -367,7 +367,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
         (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
                                         (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1),
-                                        jnp.arange(0, seq_len))
+                                        jnp.arange(seq_len-1, -1, -1))
         return (bar_P, bar_M, bar_E)
 
     return outside_partition
