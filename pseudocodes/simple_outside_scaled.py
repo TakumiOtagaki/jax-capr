@@ -1,5 +1,6 @@
 beta = 1 / 0.6 # 1 / kT
 Lmax = 30
+scaling_const = 0.1  # Example scaling constant
 import numpy as np
 
 def B(x):
@@ -7,6 +8,10 @@ def B(x):
 
 def f_2(i, j, h, l, OMM):
     return 1.0 # Placeholder for the actual function
+
+def s(i): # should use same scaling as in inside; maybe demand some modification in the inside code(jax-rnafold)
+    # Scaling factor for position i
+    return np.exp( - scaling_const * i)
 
 def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
     # init ...
@@ -20,7 +25,7 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
 
     # (A) xi recursion
     for i in range(1, n + 1): # i = 1, 2, ..., n (0-origin)
-        bar_xi[i] += xi[i-1] + sum([
+        bar_xi[i] += s(1) * xi[i-1] + sum([
             bar_xi[j] * P[j, i-1] for j in range(0, i-1) #j = 0, 1, ..., i - 2
         ])
 
@@ -32,16 +37,16 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
             # bar_P(h, l)
             bar_P[h, l] += bar_xi[h] * xi[l+1] \
                 + sum([
-                    B(f_2(i, j, h, l, OMM)) * bar_P[i, j]
+                    B(f_2(i, j, h, l, OMM)) * bar_P[i, j] * s(h - i + j - l) if (h - i - 1 + j - l - 1 <= Lmax) else 0.0
                     for i in range(1, h) for j in range(l + 1, n + 1)
                 ])
             # bar_P^m(h, l)
-            bar_Pm[h, l] += sum([
+            bar_Pm[h, l] += s(1) * sum([
                 bar_P[h, j] * M[1, l + 1, j - 1]
                 for j in range (l + 1, n + 1)
             ])
             # bar_P^{m+1}(h, l)
-            bar_Pm1[h, l] += sum([
+            bar_Pm1[h, l] += s(1) * sum([
                 bar_P[h, j] * (B(en_Mu) ** (j - l - 1))
                 for j in range (l + 1, n + 1)
             ])
