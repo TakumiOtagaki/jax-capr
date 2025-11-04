@@ -77,8 +77,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     n_special_hairpins = em.n_special_hairpins
 
 
-
-
     @jit
     def fill_bar_E(bar_E, bar_P, padded_p_seq, em, n):
         def body(i, current_bar_E):
@@ -151,7 +149,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, em, seq_len)
 
         # filling the other tables
-        def fill_tables(carry, i):
+        def fill_tables_by_step(carry, i):
             bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_Ps(carry, inside, em, i)
@@ -160,7 +158,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_M = fill_bar_M(carry, inside, i)
 
             return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
-        (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables,
+        (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
                                         (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1),
                                         jnp.arange(0, seq_len))
         return (bar_P, bar_M, bar_E)
