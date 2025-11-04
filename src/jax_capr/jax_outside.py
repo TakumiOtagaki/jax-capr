@@ -285,12 +285,30 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         def get_bp_stack(bp_idx_ij, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
             # bp_idx は bp_idx_of_ij となっていることに注意する。
             # l - h = d ゆえ h = l - d
-            h = l - d
+            h = l - d # TODO: 0 <= h の条件を入れたいが、jax で許される形にするにはどうしたら良いか？初めの時点で hs, ls のペアを渡しておくか？
             bp = bp_bases[bp_idx_ij]
             bhm1 = int(bp[0]) # bi; i = h - 1
             blp1 = int(bp[1]) # bj; j = l + 1
             return bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
                 padded_p_seq[l+1, blp1]*em.en_stack(bhm1, blp1, bh, bl)
+
+        def get_bp_l_multi_sm(bp_idx_hl, l):
+            # h, l, bh, bl が与えられた時の multiloop による寄与を計算する。
+            h = l - d
+            bp = bp_bases[bp_idx_hl]
+            bh = int(bp[0]) # bi; i = h - 1
+            bl = int(bp[1]) # bj; j = l + 1
+            
+            def get_i_term(i): # bl は上で定義されている
+                i_cond = (i < h)
+                # MB がどう絡むのかわからないので調査する必要がある。
+                    # MB[i, j] は i, j が multiloop を閉じる一つのペアであるときの
+                    #  multi branch boltzman factor * P[bp_idx_ij, i, j] の和
+                return jnp.where(i_cond,
+                                 s_table[1] * bar_ML[1, i+1, h-1] * bar_Pm[i, l] \
+                                 + (s_table[1] * )
+                                 0.0)
+
 
         def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
             # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
@@ -305,6 +323,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
+            sm += jnp.sum(stack_summands) * s_table[2]
+
+            # Multi-loops
+
+
         
         def get_bp_all_ls(bp_idx):
             ls = jnp.arange(seq_len + 1)
