@@ -282,14 +282,14 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
-        def get_bp_stack(bp_idx, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
+        def get_bp_stack(bp_idx_ij, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
             # bp_idx は bp_idx_of_ij となっていることに注意する。
             # l - h = d ゆえ h = l - d
             h = l - d
-            bp = bp_bases[bp_idx]
+            bp = bp_bases[bp_idx_ij]
             bhm1 = int(bp[0]) # bi; i = h - 1
             blp1 = int(bp[1]) # bj; j = l + 1
-            return bar_P[bp_idx, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
+            return bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
                 padded_p_seq[l+1, blp1]*em.en_stack(bhm1, blp1, bh, bl)
 
         def get_bp_l_sm(bp_idx, l): # ある l に対してそれに対応する summation を計算する。
