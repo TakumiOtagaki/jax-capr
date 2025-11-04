@@ -8,3 +8,4 @@
 - `src/jax_capr/jax_outside.py` に outside 再帰の全項目（外部、マルチ、スタック、bulge/internal、`bar_OMM` 伝播）を実装。現状は Python の多重 `for` ループ主体で、CPU 実行は動作するが GPU 並列化には不向き。
 - ViennaRNA 比較テストでは `energy.JaxNNModel` へ切り替えることで JIT 利用時の `TracerIntegerConversionError` を解消し、`uv run tests/test_outside_vs_vienna.py` が通るようになった。
 - TODO: `jax_outside.py` を `submodules/jax-rnafold/src/jax_rnafold/d0/ss.py` と同様に `vmap`/`jnp.einsum`/`lax.scan` へ書き換え、Python ループを排除して GPU でも高速に動作させる。既存のロジックを保ちながら段階的にベクトル化する方針で進める。
+- ViennaRNA 側は `RNA.md().dangles = 0` を設定し Turner1999 と比較する。デフォルト（dangles=2）のままだと差分が大きくなる。
