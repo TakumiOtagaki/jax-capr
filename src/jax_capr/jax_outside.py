@@ -190,19 +190,186 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             + psum_hairpin_special(bi, bj, i, j, padded_p_seq) \
             - psum_hairpin_special_correction(bi, bj, i, j, padded_p_seq)
 
+    @jit
+    def psum_bulges(bi, bj, i, j, padded_p_seq, P):
+
+        def get_bp_kl(bp_idx, kl_offset):
+            bp = bp_bases[bp_idx]
+            bk = bp[0]
+            bl = bp[1]
+            bp_kl_sm = 0
+
+
+            # Right bulge
+            l = j-2-kl_offset
+            right_cond = (l >= i+2)
+            right_val = P[bp_idx, i+1, l]*padded_p_seq[i+1, bk] * \
+                padded_p_seq[l, bl]*em.en_bulge(bi, bj, bk, bl, j-l-1) * \
+                s_table[j-l+1]
+            bp_kl_sm += jnp.where(right_cond, right_val, 0.0)
+
+            # Left bulge
+            k = i+2+kl_offset
+            left_cond = (k < j-1)
+            left_val = P[bp_idx, k, j-1]*padded_p_seq[k, bk] * \
+                padded_p_seq[j-1, bl]*em.en_bulge(bi, bj, bk, bl, k-i-1) * \
+                s_table[k-i+1]
+            bp_kl_sm += jnp.where(left_cond, left_val, 0.0)
+
+            return bp_kl_sm
+
+        def get_bp_all_kl(bp_idx):
+            all_kl_offsets = jnp.arange(two_loop_length)
+            all_bp_kl_sms = vmap(get_bp_kl, (None, 0))(bp_idx, all_kl_offsets)
+            return jnp.sum(all_bp_kl_sms)
+
+        all_bp_sms = vmap(get_bp_all_kl)(jnp.arange(NBPS))
+        return jnp.sum(all_bp_sms)
+
+
+    @jit
+    def psum_internal_loops(bi, bj, i, j, padded_p_seq, P, OMM):
+        def get_mmij_term(bip1, bjm1):
+            return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
+                em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
+        mmij_terms = vmap(vmap(get_mmij_term, (0, None)), (None, 0))(N4, N4)
+        mmij = jnp.sum(mmij_terms)
+
+        sm = 0.0
+
+        # Note: 1x1 and 1xN and Nx1. Not just 1xN.
+        @jit
+        def get_bp_1n_sm(bp_idx, bip1, bjm1):
+            bp_1n_sm = 0.0
+            bp = bp_bases[bp_idx]
+            bk = bp[0]
+            bl = bp[1]
+
+            pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
+            # 1x1. Don't need safe_P since we pad on both sides.
+            bp_1n_sm += P[bp_idx, i+2, j-2]*padded_p_seq[i+2, bk] \
+                        * padded_p_seq[j-2, bl]*pr_ij_mm \
+                        * em.en_internal(bi, bj, bk, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
+                        * s_table[4]
+
+            # FIXME: change to z_offset or kl_offset
+            def z_b_fn(z_offset, b):
+                z_b_sm = 0.0
+
+                l = j-3-z_offset
+                l_cond = (l >= i+3)
+                il_en = em.en_internal(
+                     bi, bj, bk, bl, bip1, bjm1, bip1, b, 1, j-l-1)
+                right_term = P[bp_idx, i+2, l]*padded_p_seq[i+2, bk] \
+                             * padded_p_seq[l, bl]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
+                             * s_table[j-l+2]
+                z_b_sm += jnp.where(l_cond, right_term, 0.0)
+
+                k = i+3+z_offset
+                k_cond = (k < j-2)
+                il_en = em.en_internal(
+                     bi, bj, bk, bl, bip1, bjm1, b, bjm1, k-i-1, 1)
+                left_term = P[bp_idx, k, j-2]*padded_p_seq[k, bk] \
+                           * padded_p_seq[j-2, bl]*padded_p_seq[k-1, b]*pr_ij_mm*il_en \
+                           * s_table[k-i+2]
+                z_b_sm += jnp.where(k_cond, left_term, 0.0)
+
+                return z_b_sm
+
+            get_all_zb_terms = vmap(vmap(z_b_fn, (0, None)), (None, 0))
+
+            # z_offsets = jnp.arange(seq_len+1)
+            z_offsets = jnp.arange(two_loop_length)
+            bp_1n_sm += jnp.sum(get_all_zb_terms(z_offsets, N4))
+            return bp_1n_sm
+        get_all_1n_terms = vmap(vmap(vmap(get_bp_1n_sm, (0, None, None)),
+                                     (None, 0, None)), (None, None, 0))
+        sm += jnp.sum(get_all_1n_terms(jnp.arange(NBPS), N4, N4))
+
+
+        # 2x2, 3x2, 2x3
+        def get_bp_22_23_32_sm(bp_idx, k_offset, l_offset):
+            k = i + k_offset + 2
+            l = j - l_offset - 2
+
+            bp = bp_bases[bp_idx]
+            bk = bp[0]
+            bl = bp[1]
+            lup = k-i-1
+            rup = j-l-1
+
+            cond_lup_rup = ((lup == 2) & (rup == 2)) \
+                | ((lup == 2) & (rup == 3)) \
+                | ((lup == 3) & (rup == 2))
+            cond_idx = (k < j-2) & (l >= k+1)
+            cond = cond_lup_rup & cond_idx
+
+
+            def get_bp_22_23_32_summand(bip1, bjm1, bkm1, blp1):
+                return P[bp_idx, k, l]*padded_p_seq[k, bk]*padded_p_seq[l, bl] \
+                    * em.en_internal(bi, bj, bk, bl, bip1, bjm1, bkm1, blp1, lup, rup) \
+                    * padded_p_seq[k-1, bkm1]*padded_p_seq[l+1, blp1] \
+                    * padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] \
+                    * s_table[lup+rup+2]
+            get_all_summands = vmap(get_bp_22_23_32_summand, (None, None, None, 0))
+            get_all_summands = vmap(get_all_summands, (None, None, 0, None))
+            get_all_summands = vmap(get_all_summands, (None, 0, None, None))
+            get_all_summands = vmap(get_all_summands, (0, None, None, None))
+
+            all_summands = get_all_summands(N4, N4, N4, N4)
+            return jnp.where(cond, jnp.sum(all_summands), 0.0)
+        get_all_special_terms = vmap(vmap(vmap(get_bp_22_23_32_sm, (0, None, None)),
+                                          (None, 0, None)), (None, None, 0))
+        sm += jnp.sum(get_all_special_terms(jnp.arange(NBPS), jnp.arange(3), jnp.arange(3)))
+
+
+        # general internal loops
+        def general_kl_sm(k_offset, l_offset):
+            k = k_offset + i + 2
+            l = j - l_offset - 2
+
+            lup = k-i-1
+            rup = j-l-1
+
+            # idx_cond = (k >= i+2) & (k < j-2) & (l >= k+1) & (l < j-1)
+            idx_cond = (k < l)
+            is_not_n1 = (lup > 1) & (rup > 1)
+            is_22_23_32 = ((lup == 2) & (rup == 2)) \
+                          | ((lup == 2) & (rup == 3)) \
+                          | ((lup == 3) & (rup == 2))
+            cond = idx_cond & is_not_n1 & ~is_22_23_32
+
+            general_term = em.en_internal_init(lup+rup) * em.en_internal_asym(lup, rup) \
+                           * OMM[k, l] * mmij * s_table[lup+rup+2]
+
+            return jnp.where(cond, general_term, 0.0)
+        get_all_general = vmap(vmap(general_kl_sm, (0, None)), (None, 0))
+        # k_offsets, l_offsets = jnp.arange(seq_len+1), jnp.arange(seq_len+1)
+        k_offsets, l_offsets = jnp.arange(two_loop_length), jnp.arange(two_loop_length)
+        sm += jnp.sum(get_all_general(k_offsets, l_offsets))
+
+        return sm
+
 
     # ----------------- end of copy-paste ----------------------------------
 
 
     def fill_bar_Ps(
-        carry: OutsideCarry,
-        inside: InsideTablesLike,
-        model,
-        i: int,
+            h: int,
+            padded_p_seq: Array,
+            OMM: Array,
+            ML: Array,
+            P: Array,
+            bar_P: Array,
+            bar_Pm: Array,
+            bar_Pm1: Array,
+            bar_E: Array,
     ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
-        raise NotImplementedError
+        def get_bp_stack(bp_idx, j, bi, bj):
+
+
 
     def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
         """Propagate multibranch helper contributions at position i."""
@@ -212,12 +379,27 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     def fill_bar_M(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
         """Propagate multibranch DP contributions at position i."""
+        # 一旦 forward を貼り付けてます↓
+        def nb_j_fn(nb, j):
+            nb_j_cond = (j >= i) & (j < seq_len)
+            nb_j_sm = ML[nb, i+1, j] * s_table[1]
 
-        raise NotImplementedError
+            idx = jnp.where(nb-1 > 0, nb-1, 0)
+            def k_fn(k):
+                k_cond = (k >= i) & (k < j+1)
+                return jnp.where(k_cond, ML[idx, k+1, j] * MB[i, k], 0.0)
+            nb_j_sm += jnp.sum(vmap(k_fn)(jnp.arange(seq_len+1)))
+
+            return jnp.where(nb_j_cond, nb_j_sm, ML[nb, i, j])
+        get_nb_j_terms = vmap(vmap(nb_j_fn, (None, 0)), (0, None))
+
+        nb_j_terms = get_nb_j_terms(jnp.arange(3), jnp.arange(seq_len+1))
+        ML = ML.at[:, i, :].set(nb_j_terms)
+        return ML
 
 
     def fill_bar_OMM(
-        i: int,
+        h: int,
         bar_P: Array,
         padded_p_seq: Array,
         n: int,
@@ -245,13 +427,15 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, em, seq_len)
 
         # filling the other tables
-        def fill_tables_by_step(carry, i):
+        def fill_tables_by_step(carry, h):
             bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
 
-            bar_P = fill_bar_Ps(carry, inside, em, i)
-            bar_OMM = fill_bar_OMM(i, bar_P, padded_p_seq, seq_len)
-            bar_MB = fill_bar_MB(carry, inside, i)
-            bar_M = fill_bar_M(carry, inside, i)
+            bar_P = fill_bar_Ps(
+                h, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
+            )
+            # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
+            # bar_MB = fill_bar_MB(carry, inside, h)
+            bar_M = fill_bar_M(carry, inside, h)
 
             return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
         (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
