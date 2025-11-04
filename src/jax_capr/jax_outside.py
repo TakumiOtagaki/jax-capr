@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, Callable
+from typing import Protocol, Callable, cast
 import functools
 
 import jax
@@ -81,18 +81,19 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     @jit
     def fill_bar_E(bar_E, bar_P, padded_p_seq, em, n):
-        def body(i, carry):
+        def body(i, current_bar_E):
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
                 bp = bp_bases[bp_idx]
                 bj = bp[0]
                 bim1 = bp[1]
-                base_en = bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
+                base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
                 return jnp.where(cond, base_en * bar_P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
-            sm = s_table[1] * bar_E[i-1] + jnp.sum(get_all_terms(jnp.arange(seq_len), jnp.arange(NBPS)))
-            bar_E = bar_E.at[i].set(sm)
-            return bar_E, None
+            terms = cast(Array, get_all_terms(jnp.arange(n), jnp.arange(NBPS)))
+            sm = s_table[1] * current_bar_E[i-1] + jnp.sum(terms)
+            updated_bar_E = current_bar_E.at[i].set(sm)
+            return updated_bar_E, None
 
         # 2 から n まで JAX 制御フローで回す（Python ループは使わない）
         bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, n+1))
