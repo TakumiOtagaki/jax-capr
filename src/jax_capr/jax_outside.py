@@ -305,9 +305,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                     # MB[i, j] は i, j が multiloop を閉じる一つのペアであるときの
                     #  multi branch boltzman factor * P[bp_idx_ij, i, j] の和
                 return jnp.where(i_cond,
-                                 s_table[1] * bar_ML[1, i+1, h-1] * bar_Pm[i, l] \
-                                 + (s_table[1] * )
+                                 s_table[1] * ML[1, i+1, h-1] * bar_Pm1[i, l] 
+                                   + bar_Pm[i, l] * (s_table[1] * ML[1, i+1, h-1] 
+                                    + (s_table[1] * em.en_multi_unpaired())**(h - i - 1) * s_table[1]),
                                  0.0)
+
 
 
         def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
