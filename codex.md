@@ -18,6 +18,10 @@ jax-rnafold という McCaskill ベースで書かれた partition function 計�
 
 未来に行う 計算結果の比較のために CapR (Rfold の turner1999しか対応していない) と LinCapR (linearization されているが turner1999 と turner2004 両者に対応) を install しました（git add submodule みたいなやつ）。
 
+ - pseudocodes/ 以下には outside algorithm の擬似コードが置かれています。simple_outside.py は scaling なし、simple_outside_scaled.py は scaling ありのものです。
+   - scaling ありのものを実装すれば良いです。
+ - 重要なこととして、本質的な情報をたくさん備えている notes/jax-capr - メンバー_TakumiOtagaki_研究進捗 - asailab.esa.io.pdf
+
 ## 具体的な実装のイメージ
  -  jax-rnafold の inside algorithm を実装している部分（submodules/jax-rnafold/src/jax_rnafold/d0/ss.py の line 432-462 あたり）を丸ごと借りてきて、それを用いて inside 変数を計算する
     -  `import jax-rnafold` 的なノリのことをする。
