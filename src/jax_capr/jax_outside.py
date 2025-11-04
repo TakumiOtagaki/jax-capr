@@ -306,7 +306,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                                     + (s_table[1] * em.en_multi_unpaired())**(h - i - 1) * s_table[1])),
                                  0.0)
             all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len+1))
-            return jnp.sum(all_i_terms)
+            return jnp.sum(jnp.asarray(all_i_terms))
 
         def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
             # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
