@@ -71,7 +71,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
 
     special_hairpin_lens = em.special_hairpin_lens
-    max_sp_hairpin_len_up = special_hairpin_lens.max() - 2 # Subtract 2 for the paired nt
+    max_sp_hairpin_len_up = max(special_hairpin_lens) - 2 # Subtract 2 for the paired nt
     special_hairpin_idxs = em.special_hairpin_idxs
     special_hairpin_start_pos = em.special_hairpin_start_pos
     n_special_hairpins = em.n_special_hairpins
