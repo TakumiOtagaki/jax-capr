@@ -11,7 +11,9 @@ from jax_rnafold.d0 import energy
 
 def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
     RNA.params_load_RNA_Turner1999()
-    fc = RNA.fold_compound(seq, RNA.md())
+    md = RNA.md()
+    md.dangles = 0
+    fc = RNA.fold_compound(seq, md)
     fc.pf()
     bpp = fc.bpp()
     n = len(seq)
