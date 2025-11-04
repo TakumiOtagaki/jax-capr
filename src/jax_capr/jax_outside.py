@@ -100,6 +100,39 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return bar_xi_out
 
 
+    def fill_bar_Ps(
+        carry: OutsideCarry,
+        inside: InsideTablesLike,
+        model,
+        i: int,
+    ) -> Array:
+        """Propagate paired-state outside weights for span starting at i."""
+
+        raise NotImplementedError
+
+    def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
+        """Propagate multibranch helper contributions at position i."""
+
+        raise NotImplementedError
+
+
+    def fill_bar_M(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
+        """Propagate multibranch DP contributions at position i."""
+
+        raise NotImplementedError
+
+
+    def fill_bar_OMM(
+        carry: OutsideCarry,
+        inside: InsideTablesLike,
+        model,
+        i: int,
+    ) -> Array:
+        """Accumulate general internal-loop contributions into bar_OMM."""
+
+        raise NotImplementedError
+
+
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
         seq_len = inside.E.shape[0]
         bar_E = jnp.zeros(seq_len, dtype=inside.E.dtype)
@@ -122,7 +155,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_Ps(carry, inside, em, i)
-            bar_OMM = fill_bar_OMM_from_P(carry, inside, em, i)
+            bar_OMM = fill_bar_OMM(carry, inside, em, i)
             bar_MB = fill_bar_MB(carry, inside, i)
             bar_M = fill_bar_M(carry, inside, i)
 
@@ -134,38 +167,5 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     return outside_partition
 
-
-def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
-    """Propagate multibranch helper contributions at position i."""
-
-    raise NotImplementedError
-
-
-def fill_bar_M(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
-    """Propagate multibranch DP contributions at position i."""
-
-    raise NotImplementedError
-
-
-def fill_bar_Ps(
-    carry: OutsideCarry,
-    inside: InsideTablesLike,
-    model,
-    i: int,
-) -> Array:
-    """Propagate paired-state outside weights for span starting at i."""
-
-    raise NotImplementedError
-
-
-def fill_bar_OMM_from_P(
-    carry: OutsideCarry,
-    inside: InsideTablesLike,
-    model,
-    i: int,
-) -> Array:
-    """Accumulate general internal-loop contributions into bar_OMM."""
-
-    raise NotImplementedError
 
 
