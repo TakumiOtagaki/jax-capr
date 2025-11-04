@@ -139,7 +139,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         """
         コピーペーストして、引数と関数名だけ変更した。
         コメントをつけているように、個々の関数は結構やばいし、追加すべき変数がありそう。
-        mmij は OMM の逆バージョンみたいな感じかも？違うかな
+        
+        やりたいことは
+        bar_P(h, l) に対して、内側のループ =  (h, l) となっているような internal loop [(i, j), (h, l)]
+        の contribution を全ての (i, j, bp_idx_ij) について計算する。
+        internal_loop は多くの場合訳があるため、ちょっと難しい。
         """
         # bip1 --> bh, bjm1 --> bl
         # ここどうすればいいか全くわからない。bip1, bijm1 としたいけどそもそも i, j をまだ知らない.
