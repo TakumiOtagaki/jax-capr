@@ -345,24 +345,15 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         raise NotImplementedError
 
 
-    def fill_bar_M(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
+    def fill_bar_M(d: int, bar_M: Array, bar_P: Array, padded_p_seq: Array,
+                   ML: Array, MB: Array) -> Array:
+        # TODO: MB をどうやって使うのかまだわからない...
         """Propagate multibranch DP contributions at position i."""
         # 一旦 forward を貼り付けてます↓
-        def nb_j_fn(nb, j):
-            nb_j_cond = (j >= i) & (j < seq_len)
-            nb_j_sm = ML[nb, i+1, j] * s_table[1]
 
-            idx = jnp.where(nb-1 > 0, nb-1, 0)
-            def k_fn(k):
-                k_cond = (k >= i) & (k < j+1)
-                return jnp.where(k_cond, ML[idx, k+1, j] * MB[i, k], 0.0)
-            nb_j_sm += jnp.sum(vmap(k_fn)(jnp.arange(seq_len+1)))
 
-            return jnp.where(nb_j_cond, nb_j_sm, ML[nb, i, j])
-        get_nb_j_terms = vmap(vmap(nb_j_fn, (None, 0)), (0, None))
-
-        nb_j_terms = get_nb_j_terms(jnp.arange(3), jnp.arange(seq_len+1))
-        ML = ML.at[:, i, :].set(nb_j_terms)
+        h_, l_ = jnp.arange(seq_len - d), jnp.arange(d, seq_len)
+        ML = ML.at[:, h_, l_].set(nb_j_terms)
         return ML
 
 
