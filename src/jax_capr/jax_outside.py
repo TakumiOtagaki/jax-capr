@@ -58,6 +58,7 @@ def initialize_tables(inside: InsideTablesLike) -> OutsideComputation:
     )
 
 
+# ここの関数はまだイマイチであることを理解しておく必要がある。for loop を使いすぎだし、エネルギー計算にもしかしたら微妙なミスがある。
 def compute_outside(inside: InsideTablesLike, model) -> OutsideComputation:
     """
     Run the outside recursion using precomputed inside tables.
