@@ -14,6 +14,7 @@ jax-rnafold という McCaskill ベースで書かれた partition function 計�
 基本的に jax rnafold によって計算される partition function を利用して capr で計算する p(i, hairpin) のような各塩基が各構造をとる確率を計算します。
 現在 jax rnafold では確率的文脈自由文法の forward (inside) algorithm のみが実装されており、outside algorithm は未実装です。
  - 現在管理者は outside algorithm の書き下しを行なっています。（2025-10-30 現在）
+ - uv を用いて jax-rnafold を install したので、ここでは import して利用できます。開発については そうやって import した jax-rnafold の関数を利用しながら進めるため、submodules/jax-rnafold 以下のコードの参照機会は増えるはずです。
 
 未来に行う 計算結果の比較のために CapR (Rfold の turner1999しか対応していない) と LinCapR (linearization されているが turner1999 と turner2004 両者に対応) を install しました（git add submodule みたいなやつ）。
 
