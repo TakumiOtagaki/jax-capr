@@ -32,7 +32,7 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
             # bar_P(h, l)
             bar_P[h, l] += bar_xi[h] * xi[l+1] \
                 + sum([
-                    B(f_2(i, j, h, l, OMM)) * bar_P[i, j]
+                    B(f_2(i, j, h, l, OMM)) * bar_P[i, j]  if (h - i - 1 + j - l - 1 <= Lmax) else 0.0
                     for i in range(1, h) for j in range(l + 1, n + 1)
                 ])
             # bar_P^m(h, l)
