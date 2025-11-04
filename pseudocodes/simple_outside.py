@@ -59,7 +59,7 @@ def outside(n, xi, P, OMM, M, en_Mu, en_Mp, en_Mc, Lmax):
                 for i in range(1, h - 1)
             ])
 
-    Z = xi[n]
+    Z = xi[1]
     post = [[0.0]*(n+1) for _ in range(n+1)]
     for i in range(1, n+1):
         for j in range(i+1, n+1):
