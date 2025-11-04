@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+import pandas as pd
 
 import RNA
 
@@ -34,7 +35,9 @@ def test_inside_outside_matches_vienna():
     for seq in sequences:
         print(f"Sequence: {seq}")
         ours = compute_inside_outside(seq, model)
+        print("ours:", pd.DataFrame(ours.bpp))
         ref = vienna_bpp(seq, str(TURNER_1999))
+        print("vienna:", pd.DataFrame(ref)) 
         diff = ours.bpp - ref
         max_abs = np.max(np.abs(diff))
         mean_abs = np.mean(np.abs(diff))
