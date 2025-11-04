@@ -191,32 +191,30 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             - psum_hairpin_special_correction(bi, bj, i, j, padded_p_seq)
 
     @jit
-    def psum_bulges(bi, bj, i, j, padded_p_seq, P):
+    def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
+        def get_bp_kl(bp_idx_ij, ij_offset):
+            bp = bp_bases[bp_idx_ij]
+            bi = int(bp[0])
+            bj = int(bp[1])
+            bp_ij_sm = 0
 
-        def get_bp_kl(bp_idx, kl_offset):
-            bp = bp_bases[bp_idx]
-            bk = bp[0]
-            bl = bp[1]
-            bp_kl_sm = 0
-
-
-            # Right bulge
-            l = j-2-kl_offset
-            right_cond = (l >= i+2)
-            right_val = P[bp_idx, i+1, l]*padded_p_seq[i+1, bk] * \
-                padded_p_seq[l, bl]*em.en_bulge(bi, bj, bk, bl, j-l-1) * \
+            # Right bulge, note i = h - 1
+            j = l + 2 + ij_offset
+            right_cond = (l >= h + 1) # right bulge なので h = i + 1 (i = h - 1) であり、h + 1 < l は必須.
+            right_val = bar_P[bp_idx_ij, h-1, j] * padded_p_seq[h-1, bi] * \
+                padded_p_seq[l, bl] * em.en_bulge(bi, bj, bh, bl, j-l-1) * \
                 s_table[j-l+1]
-            bp_kl_sm += jnp.where(right_cond, right_val, 0.0)
+            bp_ij_sm += jnp.where(right_cond, right_val, 0.0)
 
-            # Left bulge
-            k = i+2+kl_offset
-            left_cond = (k < j-1)
-            left_val = P[bp_idx, k, j-1]*padded_p_seq[k, bk] * \
-                padded_p_seq[j-1, bl]*em.en_bulge(bi, bj, bk, bl, k-i-1) * \
-                s_table[k-i+1]
-            bp_kl_sm += jnp.where(left_cond, left_val, 0.0)
+            # Left bulge, note j = l + 1
+            i = l - 2 - ij_offset
+            left_cond = (h < l)
+            left_val = bar_P[bp_idx_ij, i, l+1] * padded_p_seq[i, bi] * \
+                padded_p_seq[l+1, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
+                s_table[h-i+1]
+            bp_ij_sm += jnp.where(left_cond, left_val, 0.0)
 
-            return bp_kl_sm
+            return bp_ij_sm
 
         def get_bp_all_kl(bp_idx):
             all_kl_offsets = jnp.arange(two_loop_length)
@@ -367,9 +365,29 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
-        def get_bp_stack(bp_idx, j, bi, bj):
+        def get_bp_stack(bp_idx, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
+            # bp_idx は bp_idx_of_ij となっていることに注意する。
+            bp = bp_bases[bp_idx]
+            bhm1 = int(bp[0]) # bi; i = h - 1
+            blp1 = int(bp[1]) # bj; j = l + 1
+            return bar_P[bp_idx, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
+                padded_p_seq[l+1, blp1]*em.en_stack(bhm1, blp1, bh, bl)
 
+        def get_bp_l_sm(bp_idx, l): # ある l に対してそれに対応する summation を計算する。
+            # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
+            bp = bp_bases[bp_idx]
+            bh = int(bp[0]) # bi; i = h - 1
+            bl = int(bp[1]) # bj; j = l + 1
 
+            sm = psum_hairpin(bh, bl, h, l, padded_p_seq)
+            sm += psum_bulges(bh, bl, h, l, padded_p_seq, P)
+        
+        def get_bp_all_ls(bp_idx):
+            ls = jnp.arange(seq_len + 1)
+            return vmap(get_bp_l_sm, (None, 0))(bp_idx, ls)
+        
+        all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
+        bar_P = bar_P.at[:, h].set(all_bp_js)
 
     def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
         """Propagate multibranch helper contributions at position i."""
