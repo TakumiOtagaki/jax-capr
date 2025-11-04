@@ -367,6 +367,24 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
         raise NotImplementedError
 
+    def fill_bar_Pm(
+        d: int,
+        padded_p_seq: Array,
+        ML: Array,
+        bar_Pm: Array,
+    ) -> Array:
+        """Propagate bar_Pm at position i."""
+
+        raise NotImplementedError
+    
+    def fill_bar_Pm1(
+        d: int,
+        padded_p_seq: Array,
+        bar_P: Array,
+    ) -> Array:
+        """Propagate bar_Pm1 at position i."""
+
+        raise NotImplementedError
 
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
         seq_len = inside.E.shape[0]
@@ -392,9 +410,13 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_P = fill_bar_P(
                 d, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
             )
+            bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_Pm)
+            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P)
             # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
             # bar_MB = fill_bar_MB(carry, inside, h)
-            bar_M = fill_bar_M(carry, inside, d)
+            bar_M = fill_bar_M(
+                d, bar_M, bar_P, padded_p_seq, inside.ML, inside.MB
+            )
 
             return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
         (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
