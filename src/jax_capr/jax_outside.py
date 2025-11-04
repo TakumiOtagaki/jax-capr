@@ -352,7 +352,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def fill_bar_M(d: int, bar_M: Array, bar_P: Array, padded_p_seq: Array,
                    ML: Array, MB: Array) -> Array:
         # TODO: MB をどうやって使うのかまだわからない...
-        """
+        r"""
         以下を全ての h, l (l - h = d) について計算する。
         bar_M(2, h, l) & := s(1) bar_M(2, h-1, l) B(M_u) + s(2) bar_P(h - 1, l + 1) em.en_multi_closing(bhm1, blp1) \\
         bar_M(1, h, l) & := s(1) bar_M(1, h-1, l) B(M_u) 
@@ -384,36 +384,99 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         d: int,
         padded_p_seq: Array,
         ML: Array,
+        bar_P: Array,
         bar_Pm: Array,
     ) -> Array:
-        """
+        r"""
         Pm[i, l] = \sum_{j} (l < j) s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j] * ML[1, l+1, j-1]
         を同じ対角線上の i,l 全てについて計算する: l - i = d
         """
-        raise NotImplementedError
+        def accumulate_single_i(i):
+            l = i + d
+
+            def accumulate_single_j(j):
+                cond_j = (l < j) & (j < seq_len)
+
+                def valid_branch(_):
+                    ml_val = ML[1, l + 1, j - 1]
+
+                    def accumulate_bp(bp_idx):
+                        bp = bp_bases[bp_idx]
+                        bi = int(bp[0])
+                        bj = int(bp[1])
+                        branch_penalty = em.en_multi_branch(bi, bj)
+                        nuc_weight = padded_p_seq[i, bi] * padded_p_seq[j, bj]
+                        return bar_P[bp_idx, i, j] * branch_penalty * nuc_weight * ml_val
+
+                    return jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
+
+                return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
+
+            j_indices = jnp.arange(seq_len)
+            total = jnp.sum(vmap(accumulate_single_j)(j_indices))
+            return s_table[1] * total
+
+        i_indices = jnp.arange(seq_len - d)
+        l_indices = i_indices + d
+        updates = vmap(accumulate_single_i)(i_indices)
+        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates)
+        return bar_Pm
     
     def fill_bar_Pm1(
         d: int,
         padded_p_seq: Array,
         bar_P: Array,
+        bar_Pm1: Array,
     ) -> Array:
-        """
+        r"""
         Pm1[i, l] = \sum_{j} (l < j) (s_table[1] * em.en_multi_unpaired())**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
         を同じ対角線上の i,l 全てについて計算する: l - i = d
         """
+        base_multi_unpaired = s_table[1] * em.en_multi_unpaired()
 
-        raise NotImplementedError
+        def accumulate_single_i(i):
+            l = i + d
+
+            def accumulate_single_j(j):
+                cond_j = (l < j) & (j < seq_len)
+
+                def valid_branch(_):
+                    gap = j - l - 1
+                    unpaired_factor = lax.pow(base_multi_unpaired, jnp.asarray(gap, dtype=bar_P.dtype))
+
+                    def accumulate_bp(bp_idx):
+                        bp = bp_bases[bp_idx]
+                        bi = int(bp[0])
+                        bj = int(bp[1])
+                        branch_penalty = em.en_multi_branch(bi, bj)
+                        nuc_weight = padded_p_seq[i, bi] * padded_p_seq[j, bj]
+                        return bar_P[bp_idx, i, j] * branch_penalty * nuc_weight * unpaired_factor
+
+                    inner_sum = jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
+                    return s_table[1] * inner_sum
+
+                return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
+
+            j_indices = jnp.arange(seq_len)
+            total = jnp.sum(vmap(accumulate_single_j)(j_indices))
+            return total
+
+        i_indices = jnp.arange(seq_len - d)
+        l_indices = i_indices + d
+        updates = vmap(accumulate_single_i)(i_indices)
+        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates)
+        return bar_Pm1
 
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
         seq_len = inside.E.shape[0]
         bar_E = jnp.zeros(seq_len, dtype=inside.E.dtype)
-        bar_E.at[1].set(1.0)  # base case: bar_E[0] = 1 in 1-based indexing
+        bar_E = bar_E.at[1].set(1.0)  # base case: bar_E[0] = 1 in 1-based indexing
         bar_P = jnp.zeros_like(inside.P)
         bar_M = jnp.zeros_like(inside.ML)
         bar_MB = jnp.zeros_like(inside.MB)
         bar_OMM = jnp.zeros_like(inside.OMM)
-        bar_Pm = jnp.zeros_like(inside.P)
-        bar_Pm1 = jnp.zeros_like(inside.P)
+        bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
+        bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
 
         padded_p_seq = jnp.zeros((seq_len+1, 4), dtype=f64)
         padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
@@ -428,8 +491,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_P = fill_bar_P(
                 d, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
             )
-            bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_Pm)
-            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P)
+            bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
+            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
             # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
             # bar_MB = fill_bar_MB(carry, inside, h)
             bar_M = fill_bar_M(
