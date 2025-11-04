@@ -349,9 +349,13 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         raise NotImplementedError
 
 
-    def fill_bar_M(d: int, bar_M: Array, bar_P: Array, padded_p_seq: Array,
-                   ML: Array, MB: Array) -> Array:
-        # TODO: MB をどうやって使うのかまだわからない...
+    def fill_bar_M(
+        d: int,
+        bar_M: Array,
+        bar_P: Array,
+        padded_p_seq: Array,
+        P: Array,
+    ) -> Array:
         r"""
         以下を全ての h, l (l - h = d) について計算する。
         bar_M(2, h, l) & := s(1) bar_M(2, h-1, l) B(M_u) + s(2) bar_P(h - 1, l + 1) em.en_multi_closing(bhm1, blp1) \\
@@ -362,12 +366,113 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_M(0, i, l) + bar_M(1, i, l)
         \right)
         """
-        # 一旦 forward を貼り付けてます↓
 
+        table_len = bar_M.shape[1]
+        multi_unpaired_factor = s_table[1] * em.en_multi_unpaired()
+        closing_scale = s_table[2]
 
-        h_, l_ = jnp.arange(seq_len - d), jnp.arange(d, seq_len)
-        ML = ML.at[:, h_, l_].set(nb_j_terms)
-        return ML
+        def body(h: int, current_bar_M: Array) -> Array:
+            l = h + d
+            valid = (l < table_len) & (l >= 0)
+
+            def update_bar_M(curr: Array) -> Array:
+                prev_idx = h - 1
+                has_prev = prev_idx >= 0
+
+                def left_m_term(_) -> Array:
+                    return multi_unpaired_factor * curr[2, prev_idx, l]
+
+                left_m2 = lax.cond(has_prev, left_m_term, lambda _: jnp.zeros((), dtype=curr.dtype), operand=None)
+
+                def closing_term(_) -> Array:
+                    def bp_body(bp_idx: int, acc: Array) -> Array:
+                        bp = bp_bases[bp_idx]
+                        bi = int(bp[0])
+                        bj = int(bp[1])
+                        contrib = bar_P[bp_idx, prev_idx, l + 1] * em.en_multi_closing(bi, bj)
+                        return acc + contrib
+
+                    return lax.fori_loop(
+                        0,
+                        NBPS,
+                        bp_body,
+                        jnp.zeros((), dtype=curr.dtype),
+                    )
+
+                has_closing = has_prev & (l + 1 < table_len)
+                closing_contrib = lax.cond(
+                    has_closing,
+                    closing_term,
+                    lambda _: jnp.zeros((), dtype=curr.dtype),
+                    operand=None,
+                )
+                new_m2 = left_m2 + closing_scale * closing_contrib
+
+                def left_m_state(order: int) -> Array:
+                    return lax.cond(
+                        has_prev,
+                        lambda _: multi_unpaired_factor * curr[order, prev_idx, l],
+                        lambda _: jnp.zeros((), dtype=curr.dtype),
+                        operand=None,
+                    )
+
+                left_m1 = left_m_state(1)
+                left_m0 = left_m_state(0)
+
+                def sum_body(i: int, acc: tuple[Array, Array]) -> tuple[Array, Array]:
+                    sum_m1_val, sum_m0_val = acc
+                    cond = has_prev & (i < prev_idx)
+
+                    def accumulate(_) -> tuple[Array, Array]:
+                        def bp_body(bp_idx: int, acc_bp: Array) -> Array:
+                            bp = bp_bases[bp_idx]
+                            bi = int(bp[0])
+                            bj = int(bp[1])
+                            left_prob = padded_p_seq[i, bi]
+                            right_prob = padded_p_seq[prev_idx, bj]
+                            contrib = (
+                                P[bp_idx, i, prev_idx]
+                                * em.en_multi_branch(bi, bj)
+                                * left_prob
+                                * right_prob
+                            )
+                            return acc_bp + contrib
+
+                        weight = lax.fori_loop(
+                            0,
+                            NBPS,
+                            bp_body,
+                            jnp.zeros((), dtype=curr.dtype),
+                        )
+                        m2_val = curr[2, i, l]
+                        m1_val = curr[1, i, l]
+                        m0_val = curr[0, i, l]
+                        return (
+                            sum_m1_val + weight * m2_val,
+                            sum_m0_val + weight * (m1_val + m0_val),
+                        )
+
+                    return lax.cond(cond, accumulate, lambda _: (sum_m1_val, sum_m0_val), operand=None)
+
+                init_acc = (
+                    jnp.zeros((), dtype=curr.dtype),
+                    jnp.zeros((), dtype=curr.dtype),
+                )
+                sum_m1, sum_m0 = lax.fori_loop(0, table_len, sum_body, init_acc)
+
+                new_m1 = left_m1 + sum_m1
+                new_m0 = left_m0 + sum_m0
+
+                updated = curr.at[2, h, l].set(new_m2)
+                updated = updated.at[1, h, l].set(new_m1)
+                updated = updated.at[0, h, l].set(new_m0)
+                return updated
+
+            return lax.cond(valid, update_bar_M, lambda _: current_bar_M, operand=current_bar_M)
+
+        upper = max(table_len - d, 0)
+        bar_M = lax.fori_loop(0, upper, body, bar_M)
+        return bar_M
 
 
     def fill_bar_OMM(
@@ -496,7 +601,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
             # bar_MB = fill_bar_MB(carry, inside, h)
             bar_M = fill_bar_M(
-                d, bar_M, bar_P, padded_p_seq, inside.ML, inside.MB
+                d, bar_M, bar_P, padded_p_seq, inside.P
             )
 
             return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
