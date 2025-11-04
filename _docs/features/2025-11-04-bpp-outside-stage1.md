@@ -41,7 +41,7 @@
       `ML[nb, i, j] = ML[nb, i+1, j] · s_table[1] + Σ_{k} ML[idx, k+1, j] · MB[i, k]`  
       を反転し、`bar_ML` → `bar_MB` → `bar_P` の順に逆伝播させる（`idx = max(nb-1, 0)` の分岐と境界条件を保持）。
 - exterior ループ:
-  - `E[i] = E[i+1]*s_table[1] + Σ_j Σ_bp (...)` に対して outside を実装し、`bar_E[0] = 1` として `bar_P` へ寄与を伝搬する。
+  - `E[i] = E[i+1]*s_table[1] + Σ_j Σ_bp (...)` に対して outside を実装し、`bar_E[0] = 1` として `bar_E` のみを更新する。塩基対への寄与は補助テーブル（`bar_Pm`, `bar_Pm1` 等）に蓄積し、`bar_P` への反映は span 降順フェーズで一括処理する。
 - `bar_M` など multibranch outside も Stage 1 で計算しておく（将来ループ確率で必要になる）。
 
 ## 数値スケーリング要件
