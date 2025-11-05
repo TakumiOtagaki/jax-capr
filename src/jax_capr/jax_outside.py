@@ -317,6 +317,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
             # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
             h = l - d
+            cond = (0 <= h) & (l <= seq_len)
             bp = bp_bases[bp_idx_hl]
             bh = int(bp[0]) # bi; i = h - 1
             bl = int(bp[1]) # bj; j = l + 1
