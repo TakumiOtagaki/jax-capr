@@ -404,14 +404,14 @@ def _construct_outside_partition_fn(
             cond_valid = (0 < h) & (l < seq_len)
             return jnp.where(cond_valid, sm, 0.0)
 
-        get_bp_all_ls = vmap(vmap(get_bp_l_sm, (0, None)), (None, 0))
+        get_bp_all_ls = vmap(vmap(get_bp_l_sm, (None, 0)), (0, None))
 
         all_bp_ls = get_bp_all_ls(jnp.arange(NBPS), jnp.arange(seq_len + 1))
         h_indices = jnp.arange(seq_len + 1)
         l_indices = h_indices + d
-        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_ls, mode='drop')
+        updated_bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_ls, mode='drop')
 
-        return bar_P
+        return updated_bar_P
 
     def fill_bar_M(
         d: int,
