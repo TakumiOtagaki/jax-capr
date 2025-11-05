@@ -97,7 +97,7 @@ def _construct_outside_partition_fn(
             updated_bar_E = current_bar_E.at[i].set(sm)
             return updated_bar_E, None
 
-        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, seq_len + 1))
+        bar_xi_out, _ = scan(body, bar_E, jnp.arange(1, seq_len + 1))
         return bar_xi_out
 
     @jit
