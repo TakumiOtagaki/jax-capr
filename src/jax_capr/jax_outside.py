@@ -376,9 +376,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             return vmap(get_bp_l_sm, (None, 0))(bp_idx_hl, ls)
 
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
-        hs = jnp.arange(seq_len + 1 - d)
-        ls = hs + d
-        bar_P = bar_P.at[:, hs, ls].set(all_bp_js)
+        h_indices = jnp.arange(d + 1, seq_len + 1)
+        l_indices = h_indices + d   
+        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_js)
 
         return bar_P
 
@@ -488,7 +488,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             j_indices = jnp.arange(seq_len + 1)
             return jnp.sum(vmap(accumulate_single_j)(j_indices))
 
-        i_indices = jnp.arange(seq_len - d + 1)
+        i_indices = jnp.arange(d + 1, seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
         bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates)
@@ -535,7 +535,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             total = jnp.sum(vmap(accumulate_single_j)(j_indices))
             return total
 
-        i_indices = jnp.arange(seq_len - d + 1)
+        i_indices = jnp.arange(d + 1, seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
         bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates)
