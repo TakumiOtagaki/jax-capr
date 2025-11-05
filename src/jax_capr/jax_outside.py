@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol, Callable, cast
+from typing import Callable, Dict, Protocol, Tuple
 import functools
+import weakref
 
 import jax
 from jax import vmap, jit, lax
@@ -16,11 +17,14 @@ from jax_rnafold.d0 import energy
 from jax_rnafold.common.utils import bp_bases, N4, NBPS, MAX_LOOP
 from jax_rnafold.common.checkpoint import checkpoint_scan
 
-from .jax_inside import InsideComputation
-
 jax.config.update("jax_enable_x64", True)
 f64 = jnp.float64
 Array = jnp.ndarray
+
+
+# Cache compiled outside kernels keyed by model identity and static arguments.
+CacheKey = Tuple[int, int, int, int | None]
+_OUTSIDE_KERNEL_CACHE: Dict[CacheKey, Tuple[Callable, weakref.ReferenceType[energy.Model]]] = {}
 
 
 def _as_int(x: Array) -> Array:
@@ -537,49 +541,86 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             total = jnp.sum(vmap(accumulate_single_j)(j_indices))
             return total
 
-        # i_indices = jnp.arange(d + 1, seq_len + 1)
         i_indices = jnp.arange(seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates, mode='drop')
+        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates, mode="drop")
         return bar_Pm1
 
-    def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
+    def outside_partition(
+        p_seq: Array,
+        P: Array,
+        ML: Array,
+        E: Array,
+        s_table: Array,
+    ) -> tuple[Array, Array, Array]:
         seq_len = int(p_seq.shape[0])
-        bar_E = jnp.zeros_like(inside.E)
-        bar_E = bar_E.at[0].set(1.0)  # base case: bar_E[0] = 1 in 0-based indexing
-        bar_E = bar_E.at[1].set(1.0 * s_table[1])  # base case: bar_E[1] = 1 * s_table[1] in 1-based indexing
-        bar_P = jnp.zeros_like(inside.P)
-        bar_M = jnp.zeros_like(inside.ML)
-        bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
-        bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
+        bar_E = jnp.zeros_like(E)
+        bar_E = bar_E.at[0].set(1.0)
+        bar_P = jnp.zeros_like(P)
+        bar_M = jnp.zeros_like(ML)
+        bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
+        bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
 
         padded_p_seq = jnp.zeros((seq_len + 1, 4), dtype=f64)
         padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
 
-        # first off, fill bar_E.
-        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq)
+        bar_E = fill_bar_E(bar_E, P, padded_p_seq, s_table)
 
-        # filling the other tables
         def fill_tables_by_step(carry, d):
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_P(
-                d, padded_p_seq, inside.ML, inside.E, bar_P, bar_Pm, bar_Pm1, bar_E
+                d,
+                padded_p_seq,
+                ML,
+                E,
+                bar_P,
+                bar_Pm,
+                bar_Pm1,
+                bar_E,
+                s_table,
             )
-            bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
-            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
-            bar_M = fill_bar_M(
-                d, bar_M, bar_P, inside.P, padded_p_seq
-            )
+            bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
+            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
+            bar_M = fill_bar_M(d, bar_M, bar_P, P, padded_p_seq, s_table)
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
-        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
-                                        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
-                                        jnp.arange(seq_len-1, -1, -1))
+
+        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(
+            fill_tables_by_step,
+            (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
+            jnp.arange(seq_len - 1, -1, -1),
+        )
         return (bar_P, bar_M, bar_E)
 
     return outside_partition
+
+
+def get_outside_partition_fn(
+    em: energy.Model,
+    seq_len: int,
+    *,
+    max_loop: int = MAX_LOOP,
+    checkpoint_every: int | None = 10,
+) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
+    """Return a cached outside kernel specialized to a given sequence length."""
+
+    key = (int(id(em)), seq_len, max_loop, checkpoint_every)
+    cached = _OUTSIDE_KERNEL_CACHE.get(key)
+    if cached is not None:
+        fn, em_ref = cached
+        if em_ref() is em:
+            return fn
+
+    kernel = _construct_outside_partition_fn(
+        em,
+        seq_len,
+        max_loop=max_loop,
+        checkpoint_every=checkpoint_every,
+    )
+    _OUTSIDE_KERNEL_CACHE[key] = (kernel, weakref.ref(em))
+    return kernel
 
 
 def compute_outside(
