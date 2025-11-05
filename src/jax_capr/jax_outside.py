@@ -407,11 +407,10 @@ def _construct_outside_partition_fn(
 
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
         h_indices = jnp.arange(seq_len + 1)
-        l_indices = h_indices + d   
+        l_indices = h_indices + d
         bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_js, mode='drop')
 
         return bar_P
-
 
     def fill_bar_M(
         d: int,
@@ -419,17 +418,19 @@ def _construct_outside_partition_fn(
         bar_P: Array,
         P: Array,
         padded_p_seq: Array,
+        s_table: Array,
     ) -> Array:
         r"""
         以下を全ての h, l (l - h = d) について計算する。
         bar_M(2, h, l) & := s(1) bar_M(2, h-1, l) B(M_u) + s(2) bar_P(h - 1, l + 1) em.en_multi_closing(bhm1, blp1) \\
-        bar_M(1, h, l) & := s(1) bar_M(1, h-1, l) B(M_u) 
+        bar_M(1, h, l) & := s(1) bar_M(1, h-1, l) B(M_u)
         + \sum_{i < h-1}  P(i, h-1) em.en_multi_branch(bi, bhm1) * bar_M(2, i, l) \\
-        bar_M(0, h, l) & := s(1) bar_M(0, h-1, l) B(M_u) 
+        bar_M(0, h, l) & := s(1) bar_M(0, h-1, l) B(M_u)
         + \sum_{i < h-1} P(i, h-1) em.en_multi_branch(bi, bhm1) * \left(
         bar_M(0, i, l) + bar_M(1, i, l)
         \right)
         """
+
         def accumulate_single_h(h):
             sm_M2 = 0.0
             sm_M1 = 0.0
