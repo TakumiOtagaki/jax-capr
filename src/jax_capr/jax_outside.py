@@ -211,51 +211,84 @@ def _construct_outside_partition_fn(
             bi = _as_int(bp[0])
             bj = _as_int(bp[1])
 
-
             def get_mmij_term(bip1, bjm1):
-                return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
-                    em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
+                return (
+                    padded_p_seq[i + 1, bip1]
+                    * padded_p_seq[j - 1, bjm1]
+                    * em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
+                )
+
             mmij_terms = vmap(vmap(get_mmij_term, (0, None)), (None, 0))(N4, N4)
             mmij = jnp.sum(mmij_terms)
 
             sm = 0.0
 
-            # Note: 1x1 and 1xN and Nx1. Not just 1xN.
             @jit
-            def get_bp_1n_sm(bip1, bjm1): # bp_idx_hl はすでに決定済み
+            def get_bp_1n_sm(bip1, bjm1):
                 bp_1n_sm = 0.0
                 cond_11 = (lup == 1) | (rup == 1)
-                # cond_11 is equal to "i = h - 2 and  j = l + 2"
 
-                pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
-                # 1x1. Don't need safe_P since we pad on both sides.
-                bp_1n_sm += jnp.where(cond_11,
-                    bar_P[bp_idx_ij, i, j]*padded_p_seq[i, bi] \
-                            * padded_p_seq[j, bj]*pr_ij_mm \
-                            * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
-                            * s_table[4],
-                    0.0
+                pr_ij_mm = padded_p_seq[i + 1, bip1] * padded_p_seq[j - 1, bjm1]
+                bp_1n_sm += jnp.where(
+                    cond_11,
+                    bar_P[bp_idx_ij, i, j]
+                    * padded_p_seq[i, bi]
+                    * padded_p_seq[j, bj]
+                    * pr_ij_mm
+                    * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1)
+                    * s_table[4],
+                    0.0,
                 )
 
                 def z_b_fn(b):
-                    # これは 1xN のときの右側の和、Nx1 のときの左側の和を計算する。
-                    # b は N の方の 内側 (h, l のそば)の塩基
                     z_b_sm = 0.0
                     cond_1N = (h == i + 2) & (2 < j - l)
 
                     il_en = em.en_internal(
-                        bi, bj, bh, bl, bip1, bjm1, bip1, b, 1, j-l-1)
-                    right_term = bar_P[bp_idx_hl, i, j]*padded_p_seq[i, bi] \
-                                * padded_p_seq[j, bj]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
-                                * s_table[j-l+2]
+                        bi,
+                        bj,
+                        bh,
+                        bl,
+                        bip1,
+                        bjm1,
+                        bip1,
+                        b,
+                        1,
+                        j - l - 1,
+                    )
+                    right_term = (
+                        bar_P[bp_idx_hl, i, j]
+                        * padded_p_seq[i, bi]
+                        * padded_p_seq[j, bj]
+                        * padded_p_seq[l + 1, b]
+                        * pr_ij_mm
+                        * il_en
+                        * s_table[j - l + 2]
+                    )
                     z_b_sm += jnp.where(cond_1N, right_term, 0.0)
 
                     cond_N1 = (2 < h - i) & (j == l + 2)
                     il_en = em.en_internal(
-                        bi, bj, bh, bl, bip1, bjm1, b, bjm1, h-i-1, 1)
-                    left_term = bar_P[bp_idx_hl, i, j]*padded_p_seq[h, bh] \
-                            * padded_p_seq[j-2, bl]*padded_p_seq[h-1, b]*pr_ij_mm*il_en \
-                            * s_table[h-i+2]
+                        bi,
+                        bj,
+                        bh,
+                        bl,
+                        bip1,
+                        bjm1,
+                        b,
+                        bjm1,
+                        h - i - 1,
+                        1,
+                    )
+                    left_term = (
+                        bar_P[bp_idx_hl, i, j]
+                        * padded_p_seq[h, bh]
+                        * padded_p_seq[j - 2, bl]
+                        * padded_p_seq[h - 1, b]
+                        * pr_ij_mm
+                        * il_en
+                        * s_table[h - i + 2]
+                    )
                     z_b_sm += jnp.where(cond_N1, left_term, 0.0)
 
                     return z_b_sm
