@@ -274,6 +274,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             padded_p_seq: Array,
             ML: Array,
             P: Array,
+            E: Array,
             bar_P: Array,
             bar_Pm: Array,
             bar_Pm1: Array,
@@ -327,6 +328,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
             # Multi-loops
             sm += get_bp_l_multi_sm(l)
+
+            # Exterior
+            sm += bar_E[h] * E[l + 1]
+
             cond = (1 <= h) & (l < seq_len - 1) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
             return jnp.where(cond, sm, P[bp_idx_hl, h, l])
 
@@ -471,7 +476,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_P(
-                d, padded_p_seq, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
+                d, padded_p_seq, inside.ML, inside.P, inside.E, bar_P, bar_Pm, bar_Pm1, bar_E
             )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
