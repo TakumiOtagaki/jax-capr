@@ -398,19 +398,17 @@ def _construct_outside_partition_fn(
 
             sm += get_bp_l_multi_sm(l)
 
-            sm += bar_E[h] * E[l + 1]
+            sm += bar_E[h] * E[l + 1] * em.en_ext_branch(bh, bl)
 
-            cond_valid = (0 <= h) & (l < seq_len - 1)
-            return jnp.where(cond_valid, sm, bar_P[bp_idx_hl, h, l])
+            cond_valid = (0 < h) & (l < seq_len)
+            return jnp.where(cond_valid, sm, 0.0)
 
-        def get_bp_all_ls(bp_idx_hl):
-            ls = jnp.arange(seq_len + 1)
-            return vmap(get_bp_l_sm, (None, 0))(bp_idx_hl, ls)
+        get_bp_all_ls = vmap(vmap(get_bp_l_sm, (0, None)), (None, 0))
 
-        all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
+        all_bp_ls = get_bp_all_ls(jnp.arange(NBPS), jnp.arange(seq_len + 1))
         h_indices = jnp.arange(seq_len + 1)
         l_indices = h_indices + d
-        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_js, mode='drop')
+        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_ls, mode='drop')
 
         return bar_P
 
