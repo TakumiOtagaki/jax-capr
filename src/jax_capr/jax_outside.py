@@ -321,7 +321,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P)
-            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, bar_P, s_table, em, two_loop_length)
+            sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table, em, two_loop_length)
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
