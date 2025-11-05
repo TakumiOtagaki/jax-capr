@@ -131,13 +131,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     @jit
     def psum_outer_internal_loops(
         bp_idx_hl: int,
-        h: int, 
-        l: int, 
-        padded_p_seq: Array, 
-        bar_P: Array, 
-        s_table: Array, 
-        em: energy.Model, 
-        two_loop_length: int
+        h: int,
+        l: int,
+        padded_p_seq: Array,
+        bar_P: Array,
+        s_table: Array,
     ) -> Array:
         """
         psum_internal_loops (inside) の逆写像（outside）を計算する。
@@ -353,7 +351,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P)
-            sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table, em, two_loop_length)
+            sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
