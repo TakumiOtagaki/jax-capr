@@ -347,7 +347,7 @@ def _construct_outside_partition_fn(
             h = l - d
             i = h - 1
             j = l + 1
-            cond = (0 < i) & (j < seq_len)
+            cond = (0 <= i) & (j <= seq_len)
             bp = bp_bases[bp_idx_ij]
             bi = bp[0]
             bj = bp[1]
