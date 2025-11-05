@@ -62,39 +62,46 @@ class OutsideCarry:
     bar_Pm1: Array
 
 
-def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideComputation, 
-                             max_loop: int = MAX_LOOP,
-                             checkpoint_every: int = 10) -> Callable:
+def _construct_outside_partition_fn(
+    em: energy.Model,
+    seq_len: int,
+    *,
+    max_loop: int = MAX_LOOP,
+    checkpoint_every: int | None = 10,
+) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
     if checkpoint_every is None:
         scan = lax.scan
     else:
         scan = functools.partial(checkpoint_scan, checkpoint_every=checkpoint_every)
 
     two_loop_length = min(seq_len, max_loop)
-    s_table = inside.s_table
 
     @jit
-    def fill_bar_E(bar_E, P, padded_p_seq):
+    def fill_bar_E(bar_E, P, padded_p_seq, s_table):
         def body(current_bar_E, i):
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
                 bp = bp_bases[bp_idx]
                 bj = _as_int(bp[0])
                 bim1 = _as_int(bp[1])
-                base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
-                return jnp.where(cond, base_en * P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
+                base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i - 1, bim1]
+                return jnp.where(
+                    cond,
+                    base_en * P[bp_idx, j, i - 1] * em.en_ext_branch(bj, bim1),
+                    0.0,
+                )
+
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
             terms = get_all_terms(jnp.arange(seq_len + 1), jnp.arange(NBPS))
-            sm = s_table[1] * current_bar_E[i-1] + jnp.sum(terms)
+            sm = s_table[1] * current_bar_E[i - 1] + jnp.sum(terms)
             updated_bar_E = current_bar_E.at[i].set(sm)
             return updated_bar_E, None
 
-        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, seq_len+1))
+        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, seq_len + 1))
         return bar_xi_out
 
-
     @jit
-    def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
+    def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table):
         def get_bp_ij(bp_idx_ij, ij_offset):
             bp = bp_bases[bp_idx_ij]
             bi = _as_int(bp[0])
@@ -493,23 +500,24 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             j_indices = jnp.arange(seq_len + 1)
             return jnp.sum(vmap(accumulate_single_j)(j_indices))
 
-        # i_indices = jnp.arange(d + 1, seq_len + 1)
         i_indices = jnp.arange(seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates, mode='drop')
+        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates, mode="drop")
         return bar_Pm
-    
+
     def fill_bar_Pm1(
         d: int,
         padded_p_seq: Array,
         bar_P: Array,
         bar_Pm1: Array,
+        s_table: Array,
     ) -> Array:
         r"""
         Pm1[i, l] = \sum_{j} (l < j) (s_table[1] * em.en_multi_unpaired())**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
         を同じ対角線上の i,l 全てについて計算する: l - i = d
         """
+
         base_multi_unpaired = s_table[1] * em.en_multi_unpaired()
 
         def accumulate_single_i(i):
@@ -641,11 +649,16 @@ def compute_outside(
     outside_partition = get_outside_partition_fn(
         model,
         seq_len,
-        inside,
         max_loop=max_loop,
         checkpoint_every=checkpoint_every,
     )
-    bar_P, bar_M, bar_E = outside_partition(inside.p_seq, inside)
+    bar_P, bar_M, bar_E = outside_partition(
+        inside.p_seq,
+        inside.P,
+        inside.ML,
+        inside.E,
+        inside.s_table,
+    )
 
     return OutsideComputation(
         bar_E=bar_E,
