@@ -137,7 +137,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         h: int, 
         l: int, 
         padded_p_seq: Array, 
-        OMM: Array,
         bar_P: Array, 
         P: Array,
         s_table: Array, 
@@ -281,7 +280,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def fill_bar_P(
             d: int,
             padded_p_seq: Array,
-            OMM: Array,
             ML: Array,
             P: Array,
             bar_P: Array,
@@ -326,8 +324,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
-            sm_to_bar_P = psum_outer_internal_loops(bh, bl, h, l, 
-                                                                   padded_p_seq, OMM, P, s_table, em, two_loop_length)
+            sm_to_bar_P = psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, s_table, em, two_loop_length)
             sm += sm_to_bar_P
 
             # stacks
@@ -484,7 +481,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_P(
-                d, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
+                d, padded_p_seq, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
             )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
