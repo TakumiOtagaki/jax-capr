@@ -108,6 +108,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             # Left bulge, note j = l + 1
             i = l - 2 - ij_offset
             j = l + 1
+            cond_ij = (j < seq_len + 1) & (0 <= i)
             left_cond = (h < l)
             # left_val = bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
             #     padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
