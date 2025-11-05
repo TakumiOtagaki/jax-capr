@@ -372,8 +372,10 @@ def _construct_outside_partition_fn(
                         + bar_Pm[i, l]
                         * (
                             s_table[1] * ML[1, i + 1, h - 1]
-                            + (s_table[1] * em.en_multi_unpaired()) ** (h - i - 1) * s_table[1]
-                        )
+                            + lax.pow(
+                                em.en_multi_unpaired(),
+                                (h - i - 1))
+                            ) * s_table[h - i]
                     ),
                     0.0,
                 )
