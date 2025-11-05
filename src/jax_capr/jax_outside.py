@@ -547,7 +547,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
         seq_len = int(p_seq.shape[0])
         bar_E = jnp.zeros_like(inside.E)
-        bar_E = bar_E.at[1].set(1.0)  # base case: bar_E[0] = 1 in 1-based indexing
+        bar_E = bar_E.at[0].set(1.0)  # base case: bar_E[0] = 1 in 0-based indexing
+        bar_E = bar_E.at[1].set(1.0 * s_table[1])  # base case: bar_E[1] = 1 * s_table[1] in 1-based indexing
         bar_P = jnp.zeros_like(inside.P)
         bar_M = jnp.zeros_like(inside.ML)
         bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
