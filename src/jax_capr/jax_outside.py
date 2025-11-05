@@ -376,9 +376,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             return vmap(get_bp_l_sm, (None, 0))(bp_idx_hl, ls)
 
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
-        h_indices = jnp.arange(d + 1, seq_len + 1)
+        h_indices = jnp.arange(seq_len + 1)
         l_indices = h_indices + d   
-        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_js)
+        bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_js, mode='drop')
 
         return bar_P
 
@@ -444,12 +444,13 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm_M0 += jnp.sum(m0_terms)
             return jnp.where(cond, sm_M0, bar_M[0, h, l]), jnp.where(cond, sm_M1, bar_M[1, h, l]), jnp.where(cond, sm_M2, bar_M[2, h, l])
 
-        h_indices = jnp.arange(d + 1, seq_len + 1)
+        # h_indices = jnp.arange(d + 1, seq_len + 1)
+        h_indices = jnp.arange(seq_len + 1)
         l_indices = h_indices + d   
         updates = vmap(accumulate_single_h)(h_indices)
-        bar_M = bar_M.at[0, h_indices, l_indices].set(updates[0])
-        bar_M = bar_M.at[1, h_indices, l_indices].set(updates[1])
-        bar_M = bar_M.at[2, h_indices, l_indices].set(updates[2])
+        bar_M = bar_M.at[0, h_indices, l_indices].set(updates[0], mode='drop')
+        bar_M = bar_M.at[1, h_indices, l_indices].set(updates[1], mode='drop')
+        bar_M = bar_M.at[2, h_indices, l_indices].set(updates[2], mode='drop')
         return bar_M
 
 
@@ -488,10 +489,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             j_indices = jnp.arange(seq_len + 1)
             return jnp.sum(vmap(accumulate_single_j)(j_indices))
 
-        i_indices = jnp.arange(d + 1, seq_len + 1)
+        # i_indices = jnp.arange(d + 1, seq_len + 1)
+        i_indices = jnp.arange(seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates)
+        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates, mode='drop')
         return bar_Pm
     
     def fill_bar_Pm1(
@@ -535,10 +537,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             total = jnp.sum(vmap(accumulate_single_j)(j_indices))
             return total
 
-        i_indices = jnp.arange(d + 1, seq_len + 1)
+        # i_indices = jnp.arange(d + 1, seq_len + 1)
+        i_indices = jnp.arange(seq_len + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates)
+        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates, mode='drop')
         return bar_Pm1
 
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
