@@ -28,8 +28,6 @@ class InsideTablesLike(Protocol):
     E: Array
     P: Array
     ML: Array
-    MB: Array
-    OMM: Array
     p_seq: Array
     s_table: Array
     scale: float
@@ -67,7 +65,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     s_table = inside.s_table
 
     @jit
-    def fill_bar_E(bar_E, P, padded_p_seq, em, n):
+    def fill_bar_E(bar_E, P, padded_p_seq, n):
         def body(i, current_bar_E):
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
@@ -542,19 +540,19 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return bar_Pm1
 
     def outside_partition(p_seq: Array, inside: InsideComputation) -> tuple[Array, Array, Array]:
-        seq_len = inside.E.shape[0]
-        bar_E = jnp.zeros(seq_len, dtype=inside.E.dtype)
+        seq_len = int(p_seq.shape[0])
+        bar_E = jnp.zeros_like(inside.E)
         bar_E = bar_E.at[1].set(1.0)  # base case: bar_E[0] = 1 in 1-based indexing
         bar_P = jnp.zeros_like(inside.P)
         bar_M = jnp.zeros_like(inside.ML)
         bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
         bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
 
-        padded_p_seq = jnp.zeros((seq_len+1, 4), dtype=f64)
+        padded_p_seq = jnp.zeros((seq_len + 1, 4), dtype=f64)
         padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
 
         # first off, fill bar_E.
-        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, em, seq_len)
+        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, seq_len)
 
         # filling the other tables
         def fill_tables_by_step(carry, d):
@@ -576,3 +574,34 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return (bar_P, bar_M, bar_E)
 
     return outside_partition
+
+
+def compute_outside(
+    inside: InsideTablesLike,
+    model: energy.Model,
+    *,
+    max_loop: int | None = None,
+    checkpoint_every: int | None = 10,
+) -> OutsideComputation:
+    """Run the outside recursion using precomputed inside tables."""
+    if max_loop is None:
+        max_loop = MAX_LOOP
+
+    if not hasattr(inside, "p_seq"):
+        raise AttributeError("Inside tables must expose a `p_seq` field for outside recursion.")
+
+    seq_len = int(jnp.asarray(inside.p_seq).shape[0])
+    outside_partition = get_outside_partition_fn(
+        model,
+        seq_len,
+        inside,
+        max_loop=max_loop,
+        checkpoint_every=checkpoint_every,
+    )
+    bar_P, bar_M, bar_E = outside_partition(inside.p_seq, inside)
+
+    return OutsideComputation(
+        bar_E=bar_E,
+        bar_P=bar_P,
+        bar_M=bar_M,
+    )
