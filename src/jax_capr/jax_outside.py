@@ -284,22 +284,25 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         def get_bp_stack(bp_idx_ij, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
             # bp_idx は bp_idx_of_ij となっていることに注意する。
             # l - h = d ゆえ h = l - d
-            h = l - d # TODO: 0 <= h の条件を入れたいが、jax で許される形にするにはどうしたら良いか？初めの時点で hs, ls のペアを渡しておくか？
+            h = l - d
+            i = h - 1
+            j = l + 1
+            cond = (0 < i) & (j < seq_len) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
             bp = bp_bases[bp_idx_ij]
-            bhm1 = int(bp[0]) # bi; i = h - 1
-            blp1 = int(bp[1]) # bj; j = l + 1
-            return bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bhm1] * \
-                padded_p_seq[l+1, blp1]*em.en_stack(bhm1, blp1, bh, bl)
+            bi = int(bp[0]) # bi; i = h - 1
+            bj = int(bp[1]) # bj; j = l + 1
+            return jnp.where(cond, 
+                bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bi] * \
+                padded_p_seq[l+1, bj]*em.en_stack(bi, bj, bh, bl),
+                0.0
+            )
 
         def get_bp_l_multi_sm(l):
             # h, l, bh, bl が与えられた時の multiloop による寄与を計算する。
             h = l - d
             def get_multi_i_term(i): # bl は上で定義されている
-                i_cond = (i < h)
-                # MB がどう絡むのかわからないので調査する必要がある。
-                    # MB[i, j] は i, j が multiloop を閉じる一つのペアであるときの
-                    #  multi branch boltzman factor * P[bp_idx_ij, i, j] の和
-                return jnp.where(i_cond,
+                cond = (i < h)
+                return jnp.where(cond,
                                  (s_table[1] * ML[1, i+1, h-1] * bar_Pm1[i, l] 
                                    + bar_Pm[i, l] * (s_table[1] * ML[1, i+1, h-1] 
                                     + (s_table[1] * em.en_multi_unpaired())**(h - i - 1) * s_table[1])),
@@ -316,8 +319,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
-            sm_to_bar_P = psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, s_table, em, two_loop_length)
-            sm += sm_to_bar_P
+            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, s_table, em, two_loop_length)
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
@@ -334,15 +336,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             return vmap(get_bp_l_sm, (None, 0))(bp_idx_hl, ls)
 
         all_bp_js = vmap(get_bp_all_ls)(jnp.arange(NBPS))
-        hs, ls = jnp.arange(seq_len + 1 - d), jnp.arange(d, seq_len + 1)
+        hs = jnp.arange(seq_len + 1 - d)
+        ls = hs + d
         bar_P = bar_P.at[:, hs, ls].set(all_bp_js)
 
         return bar_P
-
-    # def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
-    #     """Propagate multibranch helper contributions at position i."""
-
-    #     raise NotImplementedError
 
 
     def fill_bar_M(
