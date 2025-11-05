@@ -143,7 +143,6 @@ def _construct_outside_partition_fn(
         all_bp_sms = vmap(get_bp_all_ij)(jnp.arange(NBPS))
         return jnp.sum(all_bp_sms)
 
-
     @jit
     def psum_outer_internal_loops(
         bp_idx_hl: int,
@@ -155,16 +154,16 @@ def _construct_outside_partition_fn(
     ) -> Array:
         """
         psum_internal_loops (inside) の逆写像（outside）を計算する。
-        
+
         (h, l) [内側ペア] に対する寄与を、すべての (i, j) [外側ペア] から計算する。
         i, j は lup (h - i - 1) と rup (j - l - 1) によって決定される。
-        
+
         ネスト順序: (lup, rup) -> (bp_idx_ij) -> (bip1, bjm1)
         """
 
         max_lup_rup = two_loop_length - 2
-        lup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
-        rup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
+        lup_offsets = jnp.arange(max_lup_rup)
+        rup_offsets = jnp.arange(max_lup_rup)
 
         bp_hl = bp_bases[bp_idx_hl]
         bh = _as_int(bp_hl[0])
@@ -180,6 +179,7 @@ def _construct_outside_partition_fn(
                         * padded_p_seq[l + 1, bjp1]
                         * em.en_il_outer_mismatch(bh, bl, bim1, bjp1)
                     )
+
                 return jnp.sum(vmap(col_mismatch)(N4))
 
             mismatch_sum = jnp.sum(vmap(row_mismatch)(N4))
@@ -194,11 +194,11 @@ def _construct_outside_partition_fn(
 
         @jit
         def get_bp_idx_ij_hoff_loff_term(bp_idx_ij, lup_offset, rup_offset):
-            lup = lup_offset + 1  # lup = 1, 2, ...
-            rup = rup_offset + 1  # rup = 1, 2, ...
-            i = h - lup - 1       # i は 1-based index
-            j = l + rup + 1       # j は 1-based index
-            ij_cond = (j < seq_len + 1) & (0 <= i) # j は seq_len 以下
+            lup = lup_offset + 1
+            rup = rup_offset + 1
+            i = h - lup - 1
+            j = l + rup + 1
+            ij_cond = (j < seq_len + 1) & (0 <= i)
             len_cond = (lup + rup + 2 <= two_loop_length)
             valid_ij = ij_cond & len_cond
 
@@ -284,14 +284,9 @@ def _construct_outside_partition_fn(
 
             sm += jnp.sum(get_all_summands(N4, N4, N4, N4))
 
-            # general internal loops
-                # 複雑な bhm1, blp1 などを参照する必要がない。mmij が bip1, bjm1 について畳み込んでいる。
-            # idx_cond = (k >= i+2) & (k < j-2) & (l >= k+1) & (l < j-1)
-            idx_cond = (h < l)
+            idx_cond = h < l
             is_not_n1 = (lup > 1) & (rup > 1)
-            is_22_23_32 = ((lup == 2) & (rup == 2)) \
-                        | ((lup == 2) & (rup == 3)) \
-                        | ((lup == 3) & (rup == 2))
+            is_22_23_32 = ((lup == 2) & (rup == 2)) | ((lup == 2) & (rup == 3)) | ((lup == 3) & (rup == 2))
             cond_general_il = idx_cond & is_not_n1 & ~is_22_23_32
 
             general_term = (
@@ -300,7 +295,7 @@ def _construct_outside_partition_fn(
                 * mmij
                 * s_table[lup + rup + 2]
                 * bar_P[bp_idx_ij, i, j]
-                * outer_mismatch_factor  # inline outer mismatch weight (bar_OMM removed)
+                * outer_mismatch_factor
             )
 
             sm += jnp.where(cond_general_il, general_term, 0.0)
@@ -491,7 +486,14 @@ def _construct_outside_partition_fn(
                         bi = bp_ij[0]
                         bj = bp_ij[1]
                         branch_penalty = em.en_multi_branch(bi, bj)
-                        return s1 * bar_P[bp_idx, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * ml_val
+                        return (
+                            s1
+                            * bar_P[bp_idx, i, j]
+                            * branch_penalty
+                            * padded_p_seq[i, bi]
+                            * padded_p_seq[j, bj]
+                            * ml_val
+                        )
 
                     return jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
 
@@ -538,7 +540,13 @@ def _construct_outside_partition_fn(
                         bi = bp[0]
                         bj = bp[1]
                         branch_penalty = em.en_multi_branch(bi, bj)
-                        return bar_P[bp_idx_ij, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * unpaired_factor
+                        return (
+                            bar_P[bp_idx_ij, i, j]
+                            * branch_penalty
+                            * padded_p_seq[i, bi]
+                            * padded_p_seq[j, bj]
+                            * unpaired_factor
+                        )
 
                     inner_sum = jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
                     return s_table[1] * inner_sum
