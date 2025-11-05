@@ -157,9 +157,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             rup = rup_offset + 1  # rup = 1, 2, ...
             i = h - lup - 1       # i は 1-based index
             j = l + rup + 1       # j は 1-based index
-            j_cond = (j < seq_len + 1) # j は seq_len 以下
+            ij_cond = (j < seq_len + 1) & (0 <= i) # j は seq_len 以下
             len_cond = (lup + rup + 2 <= two_loop_length)
-            valid_ij = j_cond & len_cond
+            valid_ij = ij_cond & len_cond
 
             bp = bp_bases[bp_idx_ij]
             bi = int(bp[0])
