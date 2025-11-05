@@ -75,7 +75,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
                 return jnp.where(cond, base_en * P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
-            terms = cast(Array, get_all_terms(jnp.arange(seq_len + 1), jnp.arange(NBPS)))
+            terms = get_all_terms(jnp.arange(seq_len + 1), jnp.arange(NBPS))
             sm = s_table[1] * current_bar_E[i-1] + jnp.sum(terms)
             updated_bar_E = current_bar_E.at[i].set(sm)
             return updated_bar_E, None
