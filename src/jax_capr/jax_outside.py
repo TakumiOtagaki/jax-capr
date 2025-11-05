@@ -151,6 +151,28 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bh = int(bp_hl[0])
         bl = int(bp_hl[1])
 
+        valid_outer = (h > 0) & (h < seq_len + 1) & (l + 1 < seq_len + 1)
+
+        def compute_outer_mismatch(_):
+            def row_mismatch(bim1):
+                def col_mismatch(bjp1):
+                    return (
+                        padded_p_seq[h - 1, bim1]
+                        * padded_p_seq[l + 1, bjp1]
+                        * em.en_il_outer_mismatch(bh, bl, bim1, bjp1)
+                    )
+                return jnp.sum(vmap(col_mismatch)(N4))
+
+            mismatch_sum = jnp.sum(vmap(row_mismatch)(N4))
+            return padded_p_seq[h, bh] * padded_p_seq[l, bl] * mismatch_sum
+
+        outer_mismatch_factor = lax.cond(
+            valid_outer,
+            compute_outer_mismatch,
+            lambda _: 0.0,
+            operand=None,
+        )
+
         @jit
         def get_bp_idx_ij_hoff_loff_term(bp_idx_ij, lup_offset, rup_offset):
             lup = lup_offset + 1  # lup = 1, 2, ...
@@ -254,8 +276,14 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                         | ((lup == 3) & (rup == 2))
             cond_general_il = idx_cond & is_not_n1 & ~is_22_23_32
 
-            general_term = em.en_internal_init(lup+rup) * em.en_internal_asym(lup, rup) \
-                         * mmij * s_table[lup+rup+2] * bar_P[bp_idx_ij, i, j]
+            general_term = (
+                em.en_internal_init(lup + rup)
+                * em.en_internal_asym(lup, rup)
+                * mmij
+                * s_table[lup + rup + 2]
+                * bar_P[bp_idx_ij, i, j]
+                * outer_mismatch_factor  # inline outer mismatch weight (bar_OMM removed)
+            )
 
             sm += jnp.where(cond_general_il, general_term, 0.0)
 
@@ -273,7 +301,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             d: int,
             padded_p_seq: Array,
             ML: Array,
-            P: Array,
             E: Array,
             bar_P: Array,
             bar_Pm: Array,
@@ -524,7 +551,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_P(
-                d, padded_p_seq, inside.ML, inside.P, inside.E, bar_P, bar_Pm, bar_Pm1, bar_E
+                d, padded_p_seq, inside.ML, inside.E, bar_P, bar_Pm, bar_Pm1, bar_E
             )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
@@ -539,6 +566,4 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return (bar_P, bar_M, bar_E)
 
     return outside_partition
-
-
 
