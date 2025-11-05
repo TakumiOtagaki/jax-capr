@@ -143,7 +143,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         
         ネスト順序: (lup, rup) -> (bp_idx_ij) -> (bip1, bjm1)
         """
-        seq_len = padded_p_seq.shape[0] - 1 # p_seq は 0-indexed
 
         max_lup_rup = two_loop_length - 2
         lup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
@@ -185,12 +184,14 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                 pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
                 # 1x1. Don't need safe_P since we pad on both sides.
-                bp_1n_sm += P[bp_idx_hl, i+2, j-2]*padded_p_seq[i+2, bh] \
+                bp_1n_sm += jnp.where(cond_11,
+                    P[bp_idx_hl, i+2, j-2]*padded_p_seq[i+2, bh] \
                             * padded_p_seq[j-2, bl]*pr_ij_mm \
                             * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
-                            * s_table[4]
+                            * s_table[4],
+                    0.0
+                )
 
-                # FIXME: change to z_offset or kl_offset
                 def z_b_fn(b):
                     # これは 1xN のときの右側の和、Nx1 のときの左側の和を計算する。
                     # b は N の方の 内側 (h, l のそば)の塩基
