@@ -398,7 +398,8 @@ def _construct_outside_partition_fn(
 
             sm += get_bp_l_multi_sm(l)
 
-            sm += bar_E[h] * E[l + 1] * em.en_ext_branch(bh, bl)
+            # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
+            sm += bar_E[h] * E[l + 1] * em.en_ext_branch(bh, bl) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
 
             cond_valid = (0 < h) & (l < seq_len)
             return jnp.where(cond_valid, sm, 0.0)
