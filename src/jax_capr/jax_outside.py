@@ -94,21 +94,23 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bp = bp_bases[bp_idx_ij]
             bi = int(bp[0])
             bj = int(bp[1])
-            bp_ij_sm = jnp.zeros((), dtype=bar_P.dtype)
+            bp_ij_sm = 0
 
             # Right bulge, note i = h - 1
             j = l + 2 + ij_offset
-            right_cond = (l >= h + 1) # right bulge なので h = i + 1 (i = h - 1) であり、h + 1 < l は必須.
-            right_val = bar_P[bp_idx_ij, h-1, j] * padded_p_seq[h-1, bi] * \
-                padded_p_seq[l, bl] * em.en_bulge(bi, bj, bh, bl, j-l-1) * \
+            i = h - 1
+            right_cond = (h < l) # right bulge なので h = i + 1 (i = h - 1) であり、h + 1 < l は必須.
+            right_val = bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
+                padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, j-l-1) * \
                 s_table[j-l+1]
             bp_ij_sm += jnp.where(right_cond, right_val, 0.0)
 
             # Left bulge, note j = l + 1
             i = l - 2 - ij_offset
+            j = l + 1
             left_cond = (h < l)
-            left_val = bar_P[bp_idx_ij, i, l+1] * padded_p_seq[i, bi] * \
-                padded_p_seq[l+1, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
+            left_val = bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
+                padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
                 s_table[h-i+1]
             bp_ij_sm += jnp.where(left_cond, left_val, 0.0)
 
