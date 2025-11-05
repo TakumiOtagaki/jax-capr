@@ -130,7 +130,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         l: int, 
         padded_p_seq: Array, 
         bar_P: Array, 
-        P: Array,
         s_table: Array, 
         em: energy.Model, 
         two_loop_length: int
@@ -185,8 +184,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
                 # 1x1. Don't need safe_P since we pad on both sides.
                 bp_1n_sm += jnp.where(cond_11,
-                    P[bp_idx_hl, i+2, j-2]*padded_p_seq[i+2, bh] \
-                            * padded_p_seq[j-2, bl]*pr_ij_mm \
+                    bar_P[bp_idx_ij, i, j]*padded_p_seq[i, bi] \
+                            * padded_p_seq[j, bj]*pr_ij_mm \
                             * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
                             * s_table[4],
                     0.0
@@ -200,15 +199,15 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                     il_en = em.en_internal(
                         bi, bj, bh, bl, bip1, bjm1, bip1, b, 1, j-l-1)
-                    right_term = P[bp_idx_hl, i+2, l]*padded_p_seq[i+2, bh] \
-                                * padded_p_seq[l, bl]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
+                    right_term = bar_P[bp_idx_hl, i, j]*padded_p_seq[i, bi] \
+                                * padded_p_seq[j, bj]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
                                 * s_table[j-l+2]
                     z_b_sm += jnp.where(cond_1N, right_term, 0.0)
 
                     cond_N1 = (2 < h - i) & (j == l + 2)
                     il_en = em.en_internal(
                         bi, bj, bh, bl, bip1, bjm1, b, bjm1, h-i-1, 1)
-                    left_term = P[bp_idx_hl, h, j-2]*padded_p_seq[h, bh] \
+                    left_term = bar_P[bp_idx_hl, i, j]*padded_p_seq[h, bh] \
                             * padded_p_seq[j-2, bl]*padded_p_seq[h-1, b]*pr_ij_mm*il_en \
                             * s_table[h-i+2]
                     z_b_sm += jnp.where(cond_N1, left_term, 0.0)
@@ -232,7 +231,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 cond_idx = (h < j-2) & (l >= h+1)
                 cond_22_23_32 = cond_lup_rup & cond_idx
                 return jnp.where(cond_22_23_32,
-                    P[bp_idx_hl, h, l]*padded_p_seq[h, bh]*padded_p_seq[l, bl] \
+                    bar_P[bp_idx_ij, i, j]*padded_p_seq[i, bi]*padded_p_seq[j, bj] \
                     * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bhm1, blp1, lup, rup) \
                     * padded_p_seq[h-1, bhm1]*padded_p_seq[l+1, blp1] \
                     * padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] \
@@ -321,8 +320,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bl = int(bp[1]) # bj; j = l + 1
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
-            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
-            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, s_table, em, two_loop_length)
+            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P)
+            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, bar_P, s_table, em, two_loop_length)
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
