@@ -651,7 +651,7 @@ def _construct_outside_partition_fn(
         (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(
             fill_tables_by_step,
             (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
-            jnp.arange(seq_len - 1, -1, -1),
+            jnp.arange(seq_len - 1, -1, 0),
         )
         return (bar_P, bar_M, bar_E)
 
