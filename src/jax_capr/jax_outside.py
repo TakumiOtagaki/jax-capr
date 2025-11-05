@@ -112,26 +112,31 @@ def _construct_outside_partition_fn(
             j = l + 2 + ij_offset
             i = h - 1
             cond_ij = (j < seq_len + 1) & (0 <= i)
-            right_cond = (h < l) # right bulge なので h = i + 1 (i = h - 1) であり、h + 1 < l は必須.
-            bp_ij_sm += jnp.where(right_cond & cond_ij,
-                                   bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
-                                    padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, j-l-1) * \
-                                    s_table[j-l+1],
-                                      0.0)
+            right_cond = h < l
+            bp_ij_sm += jnp.where(
+                right_cond & cond_ij,
+                bar_P[bp_idx_ij, i, j]
+                * padded_p_seq[i, bi]
+                * padded_p_seq[j, bj]
+                * em.en_bulge(bi, bj, bh, bl, j - l - 1)
+                * s_table[j - l + 1],
+                0.0,
+            )
 
             # Left bulge, note j = l + 1
             i = l - 2 - ij_offset
             j = l + 1
             cond_ij = (j < seq_len + 1) & (0 <= i)
-            left_cond = (h < l)
-            # left_val = bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
-            #     padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
-            #     s_table[h-i+1]
-            bp_ij_sm += jnp.where(left_cond & cond_ij,
-                                    bar_P[bp_idx_ij, i, j] * padded_p_seq[i, bi] * \
-                                    padded_p_seq[j, bj] * em.en_bulge(bi, bj, bh, bl, h-i-1) * \
-                                    s_table[h-i+1],
-                                      0.0)
+            left_cond = h < l
+            bp_ij_sm += jnp.where(
+                left_cond & cond_ij,
+                bar_P[bp_idx_ij, i, j]
+                * padded_p_seq[i, bi]
+                * padded_p_seq[j, bj]
+                * em.en_bulge(bi, bj, bh, bl, h - i - 1)
+                * s_table[h - i + 1],
+                0.0,
+            )
 
             return bp_ij_sm
 
@@ -259,24 +264,28 @@ def _construct_outside_partition_fn(
 
                 bp_1n_sm += jnp.sum(get_all_zb_terms)
                 return bp_1n_sm
+
             get_all_1n_terms = vmap(vmap(get_bp_1n_sm, (0, None)), (None, 0))
             sm += jnp.sum(get_all_1n_terms(N4, N4))
 
-
-            # 2x2, 3x2, 2x3
             def get_bp_22_23_32_summand(bip1, bjm1, bhm1, blp1):
-                cond_lup_rup = ((lup == 2) & (rup == 2)) \
-                | ((lup == 2) & (rup == 3)) \
-                | ((lup == 3) & (rup == 2))
-                cond_idx = (h < j-2) & (l >= h+1)
+                cond_lup_rup = ((lup == 2) & (rup == 2)) | ((lup == 2) & (rup == 3)) | ((lup == 3) & (rup == 2))
+                cond_idx = (h < j - 2) & (l >= h + 1)
                 cond_22_23_32 = cond_lup_rup & cond_idx
-                return jnp.where(cond_22_23_32,
-                    bar_P[bp_idx_ij, i, j]*padded_p_seq[i, bi]*padded_p_seq[j, bj] \
-                    * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bhm1, blp1, lup, rup) \
-                    * padded_p_seq[h-1, bhm1]*padded_p_seq[l+1, blp1] \
-                    * padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] \
-                    * s_table[lup+rup+2],
-                    0.0)
+                return jnp.where(
+                    cond_22_23_32,
+                    bar_P[bp_idx_ij, i, j]
+                    * padded_p_seq[i, bi]
+                    * padded_p_seq[j, bj]
+                    * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bhm1, blp1, lup, rup)
+                    * padded_p_seq[h - 1, bhm1]
+                    * padded_p_seq[l + 1, blp1]
+                    * padded_p_seq[i + 1, bip1]
+                    * padded_p_seq[j - 1, bjm1]
+                    * s_table[lup + rup + 2],
+                    0.0,
+                )
+
             get_all_summands = vmap(get_bp_22_23_32_summand, (None, None, None, 0))
             get_all_summands = vmap(get_all_summands, (None, None, 0, None))
             get_all_summands = vmap(get_all_summands, (None, 0, None, None))
