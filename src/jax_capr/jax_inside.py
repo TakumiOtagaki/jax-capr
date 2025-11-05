@@ -50,7 +50,7 @@ def prepare_probability_sequence(sequence: str | Array) -> Array:
 
 def default_scale(seq_len: int) -> float:
     """Return the recommended scaling factor for a given sequence length."""
-    return -1.5 * float(seq_len)
+    return -1.5
 
 
 def compute_inside(sequence: str | Array,
