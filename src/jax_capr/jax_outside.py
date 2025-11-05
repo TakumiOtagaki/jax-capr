@@ -10,7 +10,8 @@ import jax
 from jax import vmap, jit, lax
 import jax.numpy as jnp
 
-
+# (既存の import に加えて)
+# from jax_rnafold.common.utils import int_inf
 from jax_rnafold.d0 import energy
 from jax_rnafold.common.utils import bp_bases, N4, NBPS, MAX_LOOP
 from jax_rnafold.common.checkpoint import checkpoint_scan
@@ -134,141 +135,152 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return jnp.sum(all_bp_sms)
 
 
+# jax_outside.py に配置
+
     @jit
-    def psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM): 
+    def psum_outer_internal_loops(
+        bh: int, 
+        bl: int, 
+        h: int, 
+        l: int, 
+        padded_p_seq: Array, 
+        bar_P: Array, 
+        s_table: Array, 
+        em: energy.Model, 
+        two_loop_length: int
+    ) -> tuple[Array, Array]:
         """
-        コピーペーストして、引数と関数名だけ変更した。
-        コメントをつけているように、個々の関数は結構やばいし、追加すべき変数がありそう。
+        psum_internal_loops (inside) の逆写像（outside）を計算する。
         
-        やりたいことは
-        bar_P(h, l) に対して、内側のループ =  (h, l) となっているような internal loop [(i, j), (h, l)]
-        の contribution を全ての (i, j, bp_idx_ij) について計算する。
-        internal_loop は多くの場合訳があるため、ちょっと難しい。
+        (h, l) [内側ペア] に対する寄与を、すべての (i, j) [外側ペア] から計算する。
+        i, j は lup (h - i - 1) と rup (j - l - 1) によって決定される。
+        
+        ネスト順序: (lup, rup) -> (bp_idx_ij) -> (bip1, bjm1)
         """
-        # bip1 --> bh, bjm1 --> bl
-        # ここどうすればいいか全くわからない。bip1, bijm1 としたいけどそもそも i, j をまだ知らない.
-            # TODO: おそらく OMM のように事前計算する必要がありそう。
-        def get_mmij_term(bip1, bjm1):
-            return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
-                em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
-        mmij_terms = vmap(vmap(get_mmij_term, (0, None)), (None, 0))(N4, N4)
-        mmij = jnp.sum(mmij_terms)
+        seq_len = padded_p_seq.shape[0] - 1 # p_seq は 0-indexed
 
-        sm = 0.0
+        # 1. ループサイズ (lup, rup) で vmap する
+        # lup, rup は 1 以上 (Internal loop の定義より)
+        max_lup_rup = two_loop_length - 2
+        lup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
+        rup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
 
-        # Note: 1x1 and 1xN and Nx1. Not just 1xN.
+        # vmap される内側のループで使用する定数
+        bp_indices_ij = jnp.arange(NBPS)
+        n4_indices = N4
+
         @jit
-        def get_bp_1n_sm(bp_idx, bip1, bjm1):
-            bp_1n_sm = 0.0
-            bp = bp_bases[bp_idx]
-            bk = bp[0]
-            bl = bp[1]
+        def get_contribution_for_lup(lup_offset: int) -> tuple[Array, Array]:
+            """lup を固定して rup で vmap"""
+            lup = lup_offset + 1  # lup = 1, 2, ...
+            i = h - lup - 1       # i は 1-based index
+            i_cond = (i >= 1)     # i は 1-based なので 1 以上
 
-            pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
-            # 1x1. Don't need safe_P since we pad on both sides.
-            bp_1n_sm += P[bp_idx, i+2, j-2]*padded_p_seq[i+2, bk] \
-                        * padded_p_seq[j-2, bl]*pr_ij_mm \
-                        * em.en_internal(bi, bj, bk, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
-                        * s_table[4]
+            @jit
+            def get_contribution_for_rup(rup_offset: int) -> tuple[Array, Array]:
+                """lup, rup を固定して bp_idx_ij で vmap"""
+                rup = rup_offset + 1  # rup = 1, 2, ...
+                j = l + rup + 1       # j は 1-based index
+                j_cond = (j <= seq_len) # j は seq_len 以下
 
-            # FIXME: change to z_offset or kl_offset
-            def z_b_fn(z_offset, b):
-                z_b_sm = 0.0
+                # ループ長の制約
+                len_cond = (lup + rup + 2 <= two_loop_length)
+                
+                # (i, j) がペアとして有効か
+                # (h < l は呼び出し元 fill_bar_P で保証)
+                # i = h - lup - 1
+                # j = l + rup + 1
+                # h < l より、i < j は自動的に満たされる
+                valid_ij = i_cond & j_cond & len_cond
 
-                l = j-3-z_offset
-                l_cond = (l >= i+3)
-                il_en = em.en_internal(
-                     bi, bj, bk, bl, bip1, bjm1, bip1, b, 1, j-l-1)
-                right_term = P[bp_idx, i+2, l]*padded_p_seq[i+2, bk] \
-                             * padded_p_seq[l, bl]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
-                             * s_table[j-l+2]
-                z_b_sm += jnp.where(l_cond, right_term, 0.0)
+                @jit
+                def get_contribution_for_ij_bp_type(bp_idx_ij: int) -> tuple[Array, Array]:
+                    """lup, rup, bp_idx_ij を固定してミスマッチ (bip1, bjm1) で vmap"""
+                    bp_ij = bp_bases[bp_idx_ij]
+                    bi = int(bp_ij[0])
+                    bj = int(bp_ij[1])
+                    
+                    # (i, j) が有効な場合のみ bar_P[i, j] の値を使用する
+                    # (vmap のためインデックス自体は常に有効である必要があるが、
+                    #  i, j は計算された値なので、jnp.where で後からマスクする)
+                    bar_P_ij = bar_P[bp_idx_ij, i, j]
 
-                k = i+3+z_offset
-                k_cond = (k < j-2)
-                il_en = em.en_internal(
-                     bi, bj, bk, bl, bip1, bjm1, b, bjm1, k-i-1, 1)
-                left_term = P[bp_idx, k, j-2]*padded_p_seq[k, bk] \
-                           * padded_p_seq[j-2, bl]*padded_p_seq[k-1, b]*pr_ij_mm*il_en \
-                           * s_table[k-i+2]
-                z_b_sm += jnp.where(k_cond, left_term, 0.0)
+                    @jit
+                    def get_contribution_for_mismatch(bip1: int, bjm1: int) -> tuple[Array, Array]:
+                        """
+                        i, j, lup, rup, bp_idx_ij, bip1, bjm1 が全て確定
+                        """
+                        
+                        # (i, j) のミスマッチ (i+1, j-1) の確率
+                        # i, j は 1-based。padded_p_seq は 0-based。
+                        # mismatch (i+1) -> p_seq[i]
+                        # mismatch (j-1) -> p_seq[j-2]
+                        pr_ij_mm = padded_p_seq[i, bip1] * padded_p_seq[j - 2, bjm1]
+                        
+                        # ターミナルミスマッチエネルギー
+                        mmij = em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
+                        
+                        # --- 1. d_bar_P への寄与 (特定ループ) ---
+                        en_loop = em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, lup, rup)
+                        
+                        cond_1x1 = (lup == 1) & (rup == 1)
+                        cond_1xN = (lup == 1) & (rup > 1)
+                        cond_Nx1 = (lup > 1) & (rup == 1)
+                        cond_2x2 = (lup == 2) & (rup == 2)
+                        cond_2x3 = (lup == 2) & (rup == 3)
+                        cond_3x2 = (lup == 3) & (rup == 2)
+                        
+                        # 1x1 以外は s_table スケーリングが乗る
+                        # (ss.py の実装に合わせる)
+                        # 1x1 のみ s_table[4]
+                        
+                        # s_table[lup+rup+2] が正しいスケーリング
+                        s = s_table[lup + rup + 2]
+                        
+                        # 1x1
+                        coeff_1x1 = pr_ij_mm * mmij * s * en_loop
+                        d_bar_P_1x1 = jnp.where(cond_1x1, coeff_1x1, 0.0)
 
-                return z_b_sm
+                        # 1xN, Nx1
+                        coeff_1N_N1 = pr_ij_mm * mmij * s * en_loop
+                        d_bar_P_1N_N1 = jnp.where(cond_1xN | cond_Nx1, coeff_1N_N1, 0.0)
 
-            get_all_zb_terms = vmap(vmap(z_b_fn, (0, None)), (None, 0))
+                        # 2x2, 2x3, 3x2
+                        cond_special_2N = cond_2x2 | cond_2x3 | cond_3x2
+                        coeff_2N = pr_ij_mm * mmij * s * en_loop
+                        d_bar_P_2N = jnp.where(cond_special_2N, coeff_2N, 0.0)
+                        
+                        d_bar_P_sum = (d_bar_P_1x1 + d_bar_P_1N_N1 + d_bar_P_2N) * bar_P_ij
 
-            # z_offsets = jnp.arange(seq_len+1)
-            z_offsets = jnp.arange(two_loop_length)
-            bp_1n_sm += jnp.sum(get_all_zb_terms(z_offsets, N4))
-            return bp_1n_sm
-        get_all_1n_terms = vmap(vmap(vmap(get_bp_1n_sm, (0, None, None)),
-                                     (None, 0, None)), (None, None, 0))
-        sm += jnp.sum(get_all_1n_terms(jnp.arange(NBPS), N4, N4))
+                        # --- 2. d_bar_OMM への寄与 (一般内部ループ) ---
+                        cond_general = (lup > 1) & (rup > 1) & (~cond_special_2N)
+                        
+                        en_gen = em.en_internal_init(lup+rup) \
+                                + em.en_internal_asym(lup, rup)
+                        
+                        coeff_gen = pr_ij_mm * en_gen * mmij * s
+                        d_bar_OMM_sum = jnp.where(cond_general, coeff_gen * bar_P_ij, 0.0)
+                        
+                        return d_bar_P_sum, d_bar_OMM_sum
 
+                    # vmap over mismatch types (bip1, bjm1)
+                    d_bar_P_mm, d_bar_OMM_mm = vmap(vmap(get_contribution_for_mismatch, (0, None)), (None, 0))(n4_indices, n4_indices)
+                    return jnp.sum(d_bar_P_mm), jnp.sum(d_bar_OMM_mm)
+                
+                # vmap over outer base pair types (bp_idx_ij)
+                d_bar_P_all, d_bar_OMM_all = vmap(get_contribution_for_ij_bp_type)(bp_indices_ij)
+                
+                # (i, j) が無効なインデックスだった場合は、この (lup, rup) の組合せの寄与は 0
+                return jnp.where(valid_ij, d_bar_P_all, 0.0), jnp.where(valid_ij, d_bar_OMM_all, 0.0)
 
-        # 2x2, 3x2, 2x3
-        def get_bp_22_23_32_sm(bp_idx, k_offset, l_offset):
-            k = i + k_offset + 2
-            l = j - l_offset - 2
-
-            bp = bp_bases[bp_idx]
-            bk = bp[0]
-            bl = bp[1]
-            lup = k-i-1
-            rup = j-l-1
-
-            cond_lup_rup = ((lup == 2) & (rup == 2)) \
-                | ((lup == 2) & (rup == 3)) \
-                | ((lup == 3) & (rup == 2))
-            cond_idx = (k < j-2) & (l >= k+1)
-            cond = cond_lup_rup & cond_idx
-
-
-            def get_bp_22_23_32_summand(bip1, bjm1, bkm1, blp1):
-                return P[bp_idx, k, l]*padded_p_seq[k, bk]*padded_p_seq[l, bl] \
-                    * em.en_internal(bi, bj, bk, bl, bip1, bjm1, bkm1, blp1, lup, rup) \
-                    * padded_p_seq[k-1, bkm1]*padded_p_seq[l+1, blp1] \
-                    * padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] \
-                    * s_table[lup+rup+2]
-            get_all_summands = vmap(get_bp_22_23_32_summand, (None, None, None, 0))
-            get_all_summands = vmap(get_all_summands, (None, None, 0, None))
-            get_all_summands = vmap(get_all_summands, (None, 0, None, None))
-            get_all_summands = vmap(get_all_summands, (0, None, None, None))
-
-            all_summands = get_all_summands(N4, N4, N4, N4)
-            return jnp.where(cond, jnp.sum(all_summands), 0.0)
-        get_all_special_terms = vmap(vmap(vmap(get_bp_22_23_32_sm, (0, None, None)),
-                                          (None, 0, None)), (None, None, 0))
-        sm += jnp.sum(get_all_special_terms(jnp.arange(NBPS), jnp.arange(3), jnp.arange(3)))
-
-
-        # general internal loops
-        def general_kl_sm(k_offset, l_offset):
-            k = k_offset + i + 2
-            l = j - l_offset - 2
-
-            lup = k-i-1
-            rup = j-l-1
-
-            # idx_cond = (k >= i+2) & (k < j-2) & (l >= k+1) & (l < j-1)
-            idx_cond = (k < l)
-            is_not_n1 = (lup > 1) & (rup > 1)
-            is_22_23_32 = ((lup == 2) & (rup == 2)) \
-                          | ((lup == 2) & (rup == 3)) \
-                          | ((lup == 3) & (rup == 2))
-            cond = idx_cond & is_not_n1 & ~is_22_23_32
-
-            general_term = em.en_internal_init(lup+rup) * em.en_internal_asym(lup, rup) \
-                           * OMM[k, l] * mmij * s_table[lup+rup+2]
-
-            return jnp.where(cond, general_term, 0.0)
-        get_all_general = vmap(vmap(general_kl_sm, (0, None)), (None, 0))
-        # k_offsets, l_offsets = jnp.arange(seq_len+1), jnp.arange(seq_len+1)
-        k_offsets, l_offsets = jnp.arange(two_loop_length), jnp.arange(two_loop_length)
-        sm += jnp.sum(get_all_general(k_offsets, l_offsets))
-
-        return sm
-
+            # vmap over rup (right loop size)
+            d_bar_P_rup, d_bar_OMM_rup = vmap(get_contribution_for_rup)(rup_offsets)
+            return jnp.sum(d_bar_P_rup), jnp.sum(d_bar_OMM_rup)
+        
+        # vmap over lup (left loop size)
+        d_bar_P_lup, d_bar_OMM_lup = vmap(get_contribution_for_lup)(lup_offsets)
+        
+        return jnp.sum(d_bar_P_lup), jnp.sum(d_bar_OMM_lup)
 
     # ----------------- end of copy-paste ----------------------------------
 
