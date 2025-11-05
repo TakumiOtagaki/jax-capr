@@ -244,18 +244,8 @@ def _construct_outside_partition_fn(
                     z_b_sm = 0.0
                     cond_1N = (h == i + 2) & (2 < j - l)
 
-                    il_en = em.en_internal(
-                        bi,
-                        bj,
-                        bh,
-                        bl,
-                        bip1,
-                        bjm1,
-                        bip1,
-                        b,
-                        1,
-                        j - l - 1,
-                    )
+                    il_en = em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, b, 1, j - l - 1)
+
                     right_term = (
                         bar_P[bp_idx_hl, i, j]
                         * padded_p_seq[i, bi]
@@ -268,18 +258,8 @@ def _construct_outside_partition_fn(
                     z_b_sm += jnp.where(cond_1N, right_term, 0.0)
 
                     cond_N1 = (2 < h - i) & (j == l + 2)
-                    il_en = em.en_internal(
-                        bi,
-                        bj,
-                        bh,
-                        bl,
-                        bip1,
-                        bjm1,
-                        b,
-                        bjm1,
-                        h - i - 1,
-                        1,
-                    )
+                    il_en = em.en_internal(bi, bj, bh, bl, bip1, bjm1, b, bjm1, h - i - 1, 1)
+
                     left_term = (
                         bar_P[bp_idx_hl, i, j]
                         * padded_p_seq[h, bh]
