@@ -247,7 +247,7 @@ def _construct_outside_partition_fn(
                     il_en = em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, b, 1, j - l - 1)
 
                     right_term = (
-                        bar_P[bp_idx_hl, i, j]
+                        bar_P[bp_idx_ij, i, j]
                         * padded_p_seq[i, bi]
                         * padded_p_seq[j, bj]
                         * padded_p_seq[l + 1, b]
@@ -261,7 +261,7 @@ def _construct_outside_partition_fn(
                     il_en = em.en_internal(bi, bj, bh, bl, bip1, bjm1, b, bjm1, h - i - 1, 1)
 
                     left_term = (
-                        bar_P[bp_idx_hl, i, j]
+                        bar_P[bp_idx_ij, i, j]
                         * padded_p_seq[h, bh]
                         * padded_p_seq[j - 2, bl]
                         * padded_p_seq[h - 1, b]
@@ -353,9 +353,9 @@ def _construct_outside_partition_fn(
             bj = bp[1]
             return jnp.where(
                 cond,
-                bar_P[bp_idx_ij, h - 1, l + 1]
-                * padded_p_seq[h - 1, bi]
-                * padded_p_seq[l + 1, bj]
+                bar_P[bp_idx_ij, i, j]
+                * padded_p_seq[i, bi]
+                * padded_p_seq[j, bj]
                 * em.en_stack(bi, bj, bh, bl),
                 0.0,
             )
