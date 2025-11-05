@@ -384,28 +384,27 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             l = i + d
 
             def accumulate_single_j(j):
-                cond_j = (l < j) & (j < seq_len)
+                cond_j = (l < j) & (j < seq_len + 1)
 
                 def valid_branch(_):
                     ml_val = ML[1, l + 1, j - 1]
+                    s1 = s_table[1]
 
                     def accumulate_bp(bp_idx):
-                        bp = bp_bases[bp_idx]
-                        bi = int(bp[0])
-                        bj = int(bp[1])
+                        bp_ij = bp_bases[bp_idx]
+                        bi = int(bp_ij[0])
+                        bj = int(bp_ij[1])
                         branch_penalty = em.en_multi_branch(bi, bj)
-                        nuc_weight = padded_p_seq[i, bi] * padded_p_seq[j, bj]
-                        return bar_P[bp_idx, i, j] * branch_penalty * nuc_weight * ml_val
+                        return s1 * bar_P[bp_idx, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * ml_val
 
                     return jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
 
                 return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
 
-            j_indices = jnp.arange(seq_len)
-            total = jnp.sum(vmap(accumulate_single_j)(j_indices))
-            return s_table[1] * total
+            j_indices = jnp.arange(seq_len + 1)
+            return jnp.sum(vmap(accumulate_single_j)(j_indices))
 
-        i_indices = jnp.arange(seq_len - d)
+        i_indices = jnp.arange(seq_len - d + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
         bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates)
@@ -431,7 +430,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                 def valid_branch(_):
                     gap = j - l - 1
-                    unpaired_factor = lax.pow(base_multi_unpaired, jnp.asarray(gap, dtype=bar_P.dtype))
+                    unpaired_factor = lax.pow(base_multi_unpaired * s_table[1], jnp.asarray(gap, dtype=bar_P.dtype))
+                    unpaired_factor *= s_table[1]
 
                     def accumulate_bp(bp_idx):
                         bp = bp_bases[bp_idx]
@@ -450,7 +450,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             total = jnp.sum(vmap(accumulate_single_j)(j_indices))
             return total
 
-        i_indices = jnp.arange(seq_len - d)
+        i_indices = jnp.arange(seq_len - d + 1)
         l_indices = i_indices + d
         updates = vmap(accumulate_single_i)(i_indices)
         bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates)
