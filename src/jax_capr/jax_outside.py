@@ -426,7 +426,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                     bp_ihm1 = bp_bases[bp_idx_ihm1]
                     bi = int(bp_ihm1[0])
                     bhm1 = int(bp_ihm1[1])
-                    return bar_P[bp_idx_ihm1, i, h - 1] * em.en_multi_closing(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
+                    return bar_P[bp_idx_ihm1, i, h - 1] * em.en_multi_branch(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
                 get_all_bp_i_hm1_terms = vmap(get_idx_bp_i_hm1)
                 bp_sum_i = jnp.sum(get_all_bp_i_hm1_terms(jnp.arange(NBPS)))
                 return jnp.where(cond, bp_sum_i * ml_i_to_M1, 0.0), jnp.where(cond, bp_sum_i * ml_i_to_M0, 0.0)
