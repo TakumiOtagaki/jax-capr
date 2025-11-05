@@ -387,6 +387,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         d: int,
         bar_M: Array,
         bar_P: Array,
+        P: Array,
         padded_p_seq: Array,
     ) -> Array:
         r"""
@@ -433,7 +434,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                     bp_ihm1 = bp_bases[bp_idx_ihm1]
                     bi = int(bp_ihm1[0])
                     bhm1 = int(bp_ihm1[1])
-                    return bar_P[bp_idx_ihm1, i, h - 1] * em.en_multi_branch(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
+                    return P[bp_idx_ihm1, i, h - 1] * em.en_multi_branch(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
                 get_all_bp_i_hm1_terms = vmap(get_idx_bp_i_hm1)
                 bp_sum_i = jnp.sum(get_all_bp_i_hm1_terms(jnp.arange(NBPS)))
                 return jnp.where(cond, bp_sum_i * ml_i_to_M1, 0.0), jnp.where(cond, bp_sum_i * ml_i_to_M0, 0.0)
@@ -563,7 +564,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
             bar_M = fill_bar_M(
-                d, bar_M, bar_P, padded_p_seq
+                d, bar_M, bar_P, inside.P, padded_p_seq
             )
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
