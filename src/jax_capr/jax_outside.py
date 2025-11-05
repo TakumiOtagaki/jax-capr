@@ -42,8 +42,6 @@ class OutsideComputation:
     bar_E: Array
     bar_P: Array
     bar_M: Array
-    bar_MB: Array
-    bar_OMM: Array
 
 
 @dataclass(slots=True)
@@ -53,8 +51,6 @@ class OutsideCarry:
     bar_E: Array
     bar_P: Array
     bar_M: Array
-    bar_MB: Array
-    bar_OMM: Array
     bar_Pm: Array
     bar_Pm1: Array
 
@@ -135,20 +131,19 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return jnp.sum(all_bp_sms)
 
 
-# jax_outside.py に配置
-
     @jit
     def psum_outer_internal_loops(
-        bh: int, 
-        bl: int, 
+        bp_idx_hl: int,
         h: int, 
         l: int, 
         padded_p_seq: Array, 
+        OMM: Array,
         bar_P: Array, 
+        P: Array,
         s_table: Array, 
         em: energy.Model, 
         two_loop_length: int
-    ) -> tuple[Array, Array]:
+    ) -> Array:
         """
         psum_internal_loops (inside) の逆写像（outside）を計算する。
         
@@ -159,130 +154,128 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         """
         seq_len = padded_p_seq.shape[0] - 1 # p_seq は 0-indexed
 
-        # 1. ループサイズ (lup, rup) で vmap する
-        # lup, rup は 1 以上 (Internal loop の定義より)
         max_lup_rup = two_loop_length - 2
         lup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
         rup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
 
-        # vmap される内側のループで使用する定数
-        bp_indices_ij = jnp.arange(NBPS)
-        n4_indices = N4
+        bp_hl = bp_bases[bp_idx_hl]
+        bh = int(bp_hl[0])
+        bl = int(bp_hl[1])
 
         @jit
-        def get_contribution_for_lup(lup_offset: int) -> tuple[Array, Array]:
-            """lup を固定して rup で vmap"""
+        def get_bp_idx_ij_hoff_loff_term(bp_idx_ij, lup_offset, rup_offset):
             lup = lup_offset + 1  # lup = 1, 2, ...
+            rup = rup_offset + 1  # rup = 1, 2, ...
             i = h - lup - 1       # i は 1-based index
-            i_cond = (i >= 1)     # i は 1-based なので 1 以上
+            j = l + rup + 1       # j は 1-based index
+            j_cond = (j < seq_len + 1) # j は seq_len 以下
+            len_cond = (lup + rup + 2 <= two_loop_length)
+            valid_ij = j_cond & len_cond
 
+            bp = bp_bases[bp_idx_ij]
+            bi = int(bp[0])
+            bj = int(bp[1])
+
+
+            def get_mmij_term(bip1, bjm1):
+                return padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] * \
+                    em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
+            mmij_terms = vmap(vmap(get_mmij_term, (0, None)), (None, 0))(N4, N4)
+            mmij = jnp.sum(mmij_terms)
+
+            sm = 0.0
+
+            # Note: 1x1 and 1xN and Nx1. Not just 1xN.
             @jit
-            def get_contribution_for_rup(rup_offset: int) -> tuple[Array, Array]:
-                """lup, rup を固定して bp_idx_ij で vmap"""
-                rup = rup_offset + 1  # rup = 1, 2, ...
-                j = l + rup + 1       # j は 1-based index
-                j_cond = (j <= seq_len) # j は seq_len 以下
+            def get_bp_1n_sm(bip1, bjm1): # bp_idx_hl はすでに決定済み
+                bp_1n_sm = 0.0
+                cond_11 = (lup == 1) | (rup == 1)
+                # cond_11 is equal to "i = h - 2 and  j = l + 2"
 
-                # ループ長の制約
-                len_cond = (lup + rup + 2 <= two_loop_length)
-                
-                # (i, j) がペアとして有効か
-                # (h < l は呼び出し元 fill_bar_P で保証)
-                # i = h - lup - 1
-                # j = l + rup + 1
-                # h < l より、i < j は自動的に満たされる
-                valid_ij = i_cond & j_cond & len_cond
+                pr_ij_mm = padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1]
+                # 1x1. Don't need safe_P since we pad on both sides.
+                bp_1n_sm += P[bp_idx_hl, i+2, j-2]*padded_p_seq[i+2, bh] \
+                            * padded_p_seq[j-2, bl]*pr_ij_mm \
+                            * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1) \
+                            * s_table[4]
 
-                @jit
-                def get_contribution_for_ij_bp_type(bp_idx_ij: int) -> tuple[Array, Array]:
-                    """lup, rup, bp_idx_ij を固定してミスマッチ (bip1, bjm1) で vmap"""
-                    bp_ij = bp_bases[bp_idx_ij]
-                    bi = int(bp_ij[0])
-                    bj = int(bp_ij[1])
-                    
-                    # (i, j) が有効な場合のみ bar_P[i, j] の値を使用する
-                    # (vmap のためインデックス自体は常に有効である必要があるが、
-                    #  i, j は計算された値なので、jnp.where で後からマスクする)
-                    bar_P_ij = bar_P[bp_idx_ij, i, j]
+                # FIXME: change to z_offset or kl_offset
+                def z_b_fn(b):
+                    # これは 1xN のときの右側の和、Nx1 のときの左側の和を計算する。
+                    # b は N の方の 内側 (h, l のそば)の塩基
+                    z_b_sm = 0.0
+                    cond_1N = (h == i + 2) & (2 < j - l)
 
-                    @jit
-                    def get_contribution_for_mismatch(bip1: int, bjm1: int) -> tuple[Array, Array]:
-                        """
-                        i, j, lup, rup, bp_idx_ij, bip1, bjm1 が全て確定
-                        """
-                        
-                        # (i, j) のミスマッチ (i+1, j-1) の確率
-                        # i, j は 1-based。padded_p_seq は 0-based。
-                        # mismatch (i+1) -> p_seq[i]
-                        # mismatch (j-1) -> p_seq[j-2]
-                        pr_ij_mm = padded_p_seq[i, bip1] * padded_p_seq[j - 2, bjm1]
-                        
-                        # ターミナルミスマッチエネルギー
-                        mmij = em.en_il_inner_mismatch(bi, bj, bip1, bjm1)
-                        
-                        # --- 1. d_bar_P への寄与 (特定ループ) ---
-                        en_loop = em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, lup, rup)
-                        
-                        cond_1x1 = (lup == 1) & (rup == 1)
-                        cond_1xN = (lup == 1) & (rup > 1)
-                        cond_Nx1 = (lup > 1) & (rup == 1)
-                        cond_2x2 = (lup == 2) & (rup == 2)
-                        cond_2x3 = (lup == 2) & (rup == 3)
-                        cond_3x2 = (lup == 3) & (rup == 2)
-                        
-                        # 1x1 以外は s_table スケーリングが乗る
-                        # (ss.py の実装に合わせる)
-                        # 1x1 のみ s_table[4]
-                        
-                        # s_table[lup+rup+2] が正しいスケーリング
-                        s = s_table[lup + rup + 2]
-                        
-                        # 1x1
-                        coeff_1x1 = pr_ij_mm * mmij * s * en_loop
-                        d_bar_P_1x1 = jnp.where(cond_1x1, coeff_1x1, 0.0)
+                    il_en = em.en_internal(
+                        bi, bj, bh, bl, bip1, bjm1, bip1, b, 1, j-l-1)
+                    right_term = P[bp_idx_hl, i+2, l]*padded_p_seq[i+2, bh] \
+                                * padded_p_seq[l, bl]*padded_p_seq[l+1, b]*pr_ij_mm*il_en \
+                                * s_table[j-l+2]
+                    z_b_sm += jnp.where(cond_1N, right_term, 0.0)
 
-                        # 1xN, Nx1
-                        coeff_1N_N1 = pr_ij_mm * mmij * s * en_loop
-                        d_bar_P_1N_N1 = jnp.where(cond_1xN | cond_Nx1, coeff_1N_N1, 0.0)
+                    cond_N1 = (2 < h - i) & (j == l + 2)
+                    il_en = em.en_internal(
+                        bi, bj, bh, bl, bip1, bjm1, b, bjm1, h-i-1, 1)
+                    left_term = P[bp_idx_hl, h, j-2]*padded_p_seq[h, bh] \
+                            * padded_p_seq[j-2, bl]*padded_p_seq[h-1, b]*pr_ij_mm*il_en \
+                            * s_table[h-i+2]
+                    z_b_sm += jnp.where(cond_N1, left_term, 0.0)
 
-                        # 2x2, 2x3, 3x2
-                        cond_special_2N = cond_2x2 | cond_2x3 | cond_3x2
-                        coeff_2N = pr_ij_mm * mmij * s * en_loop
-                        d_bar_P_2N = jnp.where(cond_special_2N, coeff_2N, 0.0)
-                        
-                        d_bar_P_sum = (d_bar_P_1x1 + d_bar_P_1N_N1 + d_bar_P_2N) * bar_P_ij
+                    return z_b_sm
 
-                        # --- 2. d_bar_OMM への寄与 (一般内部ループ) ---
-                        cond_general = (lup > 1) & (rup > 1) & (~cond_special_2N)
-                        
-                        en_gen = em.en_internal_init(lup+rup) \
-                                + em.en_internal_asym(lup, rup)
-                        
-                        coeff_gen = pr_ij_mm * en_gen * mmij * s
-                        d_bar_OMM_sum = jnp.where(cond_general, coeff_gen * bar_P_ij, 0.0)
-                        
-                        return d_bar_P_sum, d_bar_OMM_sum
+                get_all_zb_terms = vmap(vmap(z_b_fn, (0, None)), (None, 0))
 
-                    # vmap over mismatch types (bip1, bjm1)
-                    d_bar_P_mm, d_bar_OMM_mm = vmap(vmap(get_contribution_for_mismatch, (0, None)), (None, 0))(n4_indices, n4_indices)
-                    return jnp.sum(d_bar_P_mm), jnp.sum(d_bar_OMM_mm)
-                
-                # vmap over outer base pair types (bp_idx_ij)
-                d_bar_P_all, d_bar_OMM_all = vmap(get_contribution_for_ij_bp_type)(bp_indices_ij)
-                
-                # (i, j) が無効なインデックスだった場合は、この (lup, rup) の組合せの寄与は 0
-                return jnp.where(valid_ij, d_bar_P_all, 0.0), jnp.where(valid_ij, d_bar_OMM_all, 0.0)
+                bp_1n_sm += jnp.sum(get_all_zb_terms(N4))
+                return bp_1n_sm
+            get_all_1n_terms = vmap(vmap(vmap(get_bp_1n_sm, (0, None, None)),
+                                        (None, 0, None)), (None, None, 0))
+            sm += jnp.sum(get_all_1n_terms(N4, N4))
 
-            # vmap over rup (right loop size)
-            d_bar_P_rup, d_bar_OMM_rup = vmap(get_contribution_for_rup)(rup_offsets)
-            return jnp.sum(d_bar_P_rup), jnp.sum(d_bar_OMM_rup)
-        
-        # vmap over lup (left loop size)
-        d_bar_P_lup, d_bar_OMM_lup = vmap(get_contribution_for_lup)(lup_offsets)
-        
-        return jnp.sum(d_bar_P_lup), jnp.sum(d_bar_OMM_lup)
 
-    # ----------------- end of copy-paste ----------------------------------
+            # 2x2, 3x2, 2x3
+            def get_bp_22_23_32_summand(bip1, bjm1, bhm1, blp1):
+                cond_lup_rup = ((lup == 2) & (rup == 2)) \
+                | ((lup == 2) & (rup == 3)) \
+                | ((lup == 3) & (rup == 2))
+                cond_idx = (h < j-2) & (l >= h+1)
+                cond_22_23_32 = cond_lup_rup & cond_idx
+                return jnp.where(cond_22_23_32,
+                    P[bp_idx_hl, h, l]*padded_p_seq[h, bh]*padded_p_seq[l, bl] \
+                    * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bhm1, blp1, lup, rup) \
+                    * padded_p_seq[h-1, bhm1]*padded_p_seq[l+1, blp1] \
+                    * padded_p_seq[i+1, bip1]*padded_p_seq[j-1, bjm1] \
+                    * s_table[lup+rup+2],
+                    0.0)
+            get_all_summands = vmap(get_bp_22_23_32_summand, (None, None, None, 0))
+            get_all_summands = vmap(get_all_summands, (None, None, 0, None))
+            get_all_summands = vmap(get_all_summands, (None, 0, None, None))
+            get_all_summands = vmap(get_all_summands, (0, None, None, None))
+
+            sm += jnp.sum(get_all_summands(N4, N4, N4, N4))
+
+            # general internal loops
+                # 複雑な bhm1, blp1 などを参照する必要がない。mmij が bip1, bjm1 について畳み込んでいる。
+            # idx_cond = (k >= i+2) & (k < j-2) & (l >= k+1) & (l < j-1)
+            idx_cond = (h < l)
+            is_not_n1 = (lup > 1) & (rup > 1)
+            is_22_23_32 = ((lup == 2) & (rup == 2)) \
+                        | ((lup == 2) & (rup == 3)) \
+                        | ((lup == 3) & (rup == 2))
+            cond_general_il = idx_cond & is_not_n1 & ~is_22_23_32
+
+            general_term = em.en_internal_init(lup+rup) * em.en_internal_asym(lup, rup) \
+                         * mmij * s_table[lup+rup+2] * bar_P[bp_idx_ij, i, j]
+
+            sm += jnp.where(cond_general_il, general_term, 0.0)
+
+            return jnp.where(valid_ij, sm, 0.0)
+
+        get_all_bp_idx_ij = vmap(get_bp_idx_ij_hoff_loff_term, (0, None, None))
+        get_all_bp_idx_ij = vmap(get_all_bp_idx_ij, (None, 0, None))
+        get_all_bp_idx_ij = vmap(get_all_bp_idx_ij, (None, None, 0))
+        all_terms = get_all_bp_idx_ij(jnp.arange(NBPS), lup_offsets, rup_offsets)
+        return jnp.sum(all_terms)
+    
 
 
     def fill_bar_P(
@@ -333,7 +326,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
-            sm_to_bar_P, sm_to_bar_OMM = psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM)
+            sm_to_bar_P = psum_outer_internal_loops(bh, bl, h, l, 
+                                                                   padded_p_seq, OMM, P, s_table, em, two_loop_length)
             sm += sm_to_bar_P
 
             # stacks
@@ -379,124 +373,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_M(0, i, l) + bar_M(1, i, l)
         \right)
         """
-
-        table_len = bar_M.shape[1]
         multi_unpaired_factor = s_table[1] * em.en_multi_unpaired()
-        closing_scale = s_table[2]
-
-        def body(h: int, current_bar_M: Array) -> Array:
-            l = h + d
-            valid = (l < table_len) & (l >= 0)
-
-            def update_bar_M(curr: Array) -> Array:
-                prev_idx = h - 1
-                has_prev = prev_idx >= 0
-
-                def left_m_term(_) -> Array:
-                    return multi_unpaired_factor * curr[2, prev_idx, l]
-
-                left_m2 = lax.cond(has_prev, left_m_term, lambda _: jnp.zeros((), dtype=curr.dtype), operand=None)
-
-                def closing_term(_) -> Array:
-                    def bp_body(bp_idx: int, acc: Array) -> Array:
-                        bp = bp_bases[bp_idx]
-                        bi = int(bp[0])
-                        bj = int(bp[1])
-                        contrib = bar_P[bp_idx, prev_idx, l + 1] * em.en_multi_closing(bi, bj)
-                        return acc + contrib
-
-                    return lax.fori_loop(
-                        0,
-                        NBPS,
-                        bp_body,
-                        jnp.zeros((), dtype=curr.dtype),
-                    )
-
-                has_closing = has_prev & (l + 1 < table_len)
-                closing_contrib = lax.cond(
-                    has_closing,
-                    closing_term,
-                    lambda _: jnp.zeros((), dtype=curr.dtype),
-                    operand=None,
-                )
-                new_m2 = left_m2 + closing_scale * closing_contrib
-
-                def left_m_state(order: int) -> Array:
-                    return lax.cond(
-                        has_prev,
-                        lambda _: multi_unpaired_factor * curr[order, prev_idx, l],
-                        lambda _: jnp.zeros((), dtype=curr.dtype),
-                        operand=None,
-                    )
-
-                left_m1 = left_m_state(1)
-                left_m0 = left_m_state(0)
-
-                def sum_body(i: int, acc: tuple[Array, Array]) -> tuple[Array, Array]:
-                    sum_m1_val, sum_m0_val = acc
-                    cond = has_prev & (i < prev_idx)
-
-                    def accumulate(_) -> tuple[Array, Array]:
-                        def bp_body(bp_idx: int, acc_bp: Array) -> Array:
-                            bp = bp_bases[bp_idx]
-                            bi = int(bp[0])
-                            bj = int(bp[1])
-                            left_prob = padded_p_seq[i, bi]
-                            right_prob = padded_p_seq[prev_idx, bj]
-                            contrib = (
-                                P[bp_idx, i, prev_idx]
-                                * em.en_multi_branch(bi, bj)
-                                * left_prob
-                                * right_prob
-                            )
-                            return acc_bp + contrib
-
-                        weight = lax.fori_loop(
-                            0,
-                            NBPS,
-                            bp_body,
-                            jnp.zeros((), dtype=curr.dtype),
-                        )
-                        m2_val = curr[2, i, l]
-                        m1_val = curr[1, i, l]
-                        m0_val = curr[0, i, l]
-                        return (
-                            sum_m1_val + weight * m2_val,
-                            sum_m0_val + weight * (m1_val + m0_val),
-                        )
-
-                    return lax.cond(cond, accumulate, lambda _: (sum_m1_val, sum_m0_val), operand=None)
-
-                init_acc = (
-                    jnp.zeros((), dtype=curr.dtype),
-                    jnp.zeros((), dtype=curr.dtype),
-                )
-                sum_m1, sum_m0 = lax.fori_loop(0, table_len, sum_body, init_acc)
-
-                new_m1 = left_m1 + sum_m1
-                new_m0 = left_m0 + sum_m0
-
-                updated = curr.at[2, h, l].set(new_m2)
-                updated = updated.at[1, h, l].set(new_m1)
-                updated = updated.at[0, h, l].set(new_m0)
-                return updated
-
-            return lax.cond(valid, update_bar_M, lambda _: current_bar_M, operand=current_bar_M)
-
-        upper = max(table_len - d, 0)
-        bar_M = lax.fori_loop(0, upper, body, bar_M)
-        return bar_M
 
 
-    # def fill_bar_OMM(
-    #     h: int,
-    #     bar_P: Array,
-    #     padded_p_seq: Array,
-    #     n: int,
-    # ) -> Array:
-    #     """Accumulate general internal-loop contributions into bar_OMM."""
-
-    #     raise NotImplementedError
 
     def fill_bar_Pm(
         d: int,
@@ -591,8 +470,6 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         bar_E = bar_E.at[1].set(1.0)  # base case: bar_E[0] = 1 in 1-based indexing
         bar_P = jnp.zeros_like(inside.P)
         bar_M = jnp.zeros_like(inside.ML)
-        bar_MB = jnp.zeros_like(inside.MB)
-        bar_OMM = jnp.zeros_like(inside.OMM)
         bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
         bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=inside.P.dtype)
 
@@ -604,22 +481,20 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
         # filling the other tables
         def fill_tables_by_step(carry, d):
-            bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1 = carry
+            bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
             bar_P = fill_bar_P(
                 d, padded_p_seq, inside.OMM, inside.ML, inside.P, bar_P, bar_Pm, bar_Pm1, bar_E
             )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
-            # bar_OMM = fill_bar_OMM(h, bar_P, padded_p_seq, seq_len)
-            # bar_MB = fill_bar_MB(carry, inside, h)
             bar_M = fill_bar_M(
                 d, bar_M, bar_P, padded_p_seq, inside.P
             )
 
-            return (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), None
-        (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
-                                        (bar_OMM, bar_P, bar_M, bar_MB, bar_E, bar_Pm, bar_Pm1),
+            return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
+        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(fill_tables_by_step,
+                                        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
                                         jnp.arange(seq_len-1, -1, -1))
         return (bar_P, bar_M, bar_E)
 
