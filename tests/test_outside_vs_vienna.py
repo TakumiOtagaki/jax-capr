@@ -30,6 +30,7 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     sequences = [
+        "GGGGAAAACCCC",
         "AUGGCUACGUAC",
         "CCGAUAGCUAAG",
         "GGCAAUCCGAUC",
