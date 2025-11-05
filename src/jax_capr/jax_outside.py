@@ -124,7 +124,7 @@ def _construct_outside_partition_fn(
             )
 
             # Left bulge, note j = l + 1
-            i = l - 2 - ij_offset
+            i = h - 2 - ij_offset
             j = l + 1
             cond_ij = (j < seq_len + 1) & (0 <= i)
             left_cond = h < l
