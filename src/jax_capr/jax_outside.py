@@ -65,7 +65,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     s_table = inside.s_table
 
     @jit
-    def fill_bar_E(bar_E, P, padded_p_seq, n):
+    def fill_bar_E(bar_E, P, padded_p_seq):
         def body(i, current_bar_E):
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
@@ -75,12 +75,12 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
                 return jnp.where(cond, base_en * P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
-            terms = cast(Array, get_all_terms(jnp.arange(n), jnp.arange(NBPS)))
+            terms = cast(Array, get_all_terms(jnp.arange(seq_len + 1), jnp.arange(NBPS)))
             sm = s_table[1] * current_bar_E[i-1] + jnp.sum(terms)
             updated_bar_E = current_bar_E.at[i].set(sm)
             return updated_bar_E, None
 
-        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, n+1))
+        bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, seq_len+1))
         return bar_xi_out
 
 
@@ -552,7 +552,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
 
         # first off, fill bar_E.
-        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq, seq_len)
+        bar_E = fill_bar_E(bar_E, inside.P, padded_p_seq)
 
         # filling the other tables
         def fill_tables_by_step(carry, d):
