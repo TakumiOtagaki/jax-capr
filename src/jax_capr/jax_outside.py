@@ -334,7 +334,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm += bar_E[h] * E[l + 1]
 
             cond = (1 <= h) & (l < seq_len - 1) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
-            return jnp.where(cond, sm, P[bp_idx_hl, h, l])
+            return jnp.where(cond, sm, bar_P[bp_idx_hl, h, l])
 
 
         def get_bp_all_ls(bp_idx_hl):
