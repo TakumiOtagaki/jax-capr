@@ -88,8 +88,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
         def get_bp_ij(bp_idx_ij, ij_offset):
             bp = bp_bases[bp_idx_ij]
-            bi = int(bp[0])
-            bj = int(bp[1])
+            bi = bp[0]
+            bj = bp[1]
             bp_ij_sm = jnp.zeros((), dtype=bar_P.dtype)
 
             # Right bulge, note i = h - 1
@@ -153,8 +153,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         rup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
 
         bp_hl = bp_bases[bp_idx_hl]
-        bh = int(bp_hl[0])
-        bl = int(bp_hl[1])
+        bh = bp_hl[0]
+        bl = bp_hl[1]
 
         valid_outer = (h > 0) & (h < seq_len + 1) & (l + 1 < seq_len + 1)
 
@@ -189,8 +189,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             valid_ij = ij_cond & len_cond
 
             bp = bp_bases[bp_idx_ij]
-            bi = int(bp[0])
-            bj = int(bp[1])
+            bi = bp[0]
+            bj = bp[1]
 
 
             def get_mmij_term(bip1, bjm1):
@@ -322,8 +322,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             j = l + 1
             cond = (0 < i) & (j < seq_len) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
             bp = bp_bases[bp_idx_ij]
-            bi = int(bp[0]) # bi; i = h - 1
-            bj = int(bp[1]) # bj; j = l + 1
+            bi = bp[0] # bi; i = h - 1
+            bj = bp[1] # bj; j = l + 1
             return jnp.where(cond, 
                 bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bi] * \
                 padded_p_seq[l+1, bj]*em.en_stack(bi, bj, bh, bl),
@@ -348,8 +348,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             h = l - d
             cond = (0 <= h) & (l <= seq_len)
             bp = bp_bases[bp_idx_hl]
-            bh = int(bp[0]) # bi; i = h - 1
-            bl = int(bp[1]) # bj; j = l + 1
+            bh = bp[0] # bi; i = h - 1
+            bl = bp[1] # bj; j = l + 1
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P)
@@ -416,8 +416,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             # P 由来の項
             def get_bp_idx_hm1_lp1_term(bp_idx_hm1_lp1):
                 bp_hm1_lp1 = bp_bases[bp_idx_hm1_lp1]
-                hm1 = int(bp_hm1_lp1[0])
-                lp1 = int(bp_hm1_lp1[1])
+                hm1 = bp_hm1_lp1[0]
+                lp1 = bp_hm1_lp1[1]
                 return s_table[2] * bar_P[bp_idx_hm1_lp1, h - 1, l + 1] \
                     * padded_p_seq[h-1, hm1] * padded_p_seq[l + 1, lp1] * em.en_multi_closing(hm1, lp1)
             get_all_bp_terms = vmap(get_bp_idx_hm1_lp1_term)
@@ -430,8 +430,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 ml_i_to_M0 = bar_M[0, i, l] + bar_M[1, i, l]
                 def get_idx_bp_i_hm1(bp_idx_ihm1):
                     bp_ihm1 = bp_bases[bp_idx_ihm1]
-                    bi = int(bp_ihm1[0])
-                    bhm1 = int(bp_ihm1[1])
+                    bi = bp_ihm1[0]
+                    bhm1 = bp_ihm1[1]
                     return P[bp_idx_ihm1, i, h - 1] * em.en_multi_branch(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
                 get_all_bp_i_hm1_terms = vmap(get_idx_bp_i_hm1)
                 bp_sum_i = jnp.sum(get_all_bp_i_hm1_terms(jnp.arange(NBPS)))
@@ -474,8 +474,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                     def accumulate_bp(bp_idx):
                         bp_ij = bp_bases[bp_idx]
-                        bi = int(bp_ij[0])
-                        bj = int(bp_ij[1])
+                        bi = bp_ij[0]
+                        bj = bp_ij[1]
                         branch_penalty = em.en_multi_branch(bi, bj)
                         return s1 * bar_P[bp_idx, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * ml_val
 
@@ -519,8 +519,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                     def accumulate_bp(bp_idx_ij):
                         bp = bp_bases[bp_idx_ij]
-                        bi = int(bp[0])
-                        bj = int(bp[1])
+                        bi = bp[0]
+                        bj = bp[1]
                         branch_penalty = em.en_multi_branch(bi, bj)
                         return bar_P[bp_idx_ij, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * unpaired_factor
 
