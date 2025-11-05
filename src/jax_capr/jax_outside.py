@@ -333,7 +333,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
             sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, P)
-            sm += psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM)
+            sm_to_bar_P, sm_to_bar_OMM = psum_outer_internal_loops(bh, bl, h, l, padded_p_seq, P, OMM)
+            sm += sm_to_bar_P
 
             # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
@@ -355,10 +356,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
         return bar_P
 
-    def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
-        """Propagate multibranch helper contributions at position i."""
+    # def fill_bar_MB(carry: OutsideCarry, inside: InsideTablesLike, i: int) -> Array:
+    #     """Propagate multibranch helper contributions at position i."""
 
-        raise NotImplementedError
+    #     raise NotImplementedError
 
 
     def fill_bar_M(
@@ -487,15 +488,15 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return bar_M
 
 
-    def fill_bar_OMM(
-        h: int,
-        bar_P: Array,
-        padded_p_seq: Array,
-        n: int,
-    ) -> Array:
-        """Accumulate general internal-loop contributions into bar_OMM."""
+    # def fill_bar_OMM(
+    #     h: int,
+    #     bar_P: Array,
+    #     padded_p_seq: Array,
+    #     n: int,
+    # ) -> Array:
+    #     """Accumulate general internal-loop contributions into bar_OMM."""
 
-        raise NotImplementedError
+    #     raise NotImplementedError
 
     def fill_bar_Pm(
         d: int,
