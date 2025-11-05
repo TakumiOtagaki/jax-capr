@@ -66,14 +66,13 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     @jit
     def fill_bar_E(bar_E, P, padded_p_seq):
-        def body(i, current_bar_E):
+        def body(current_bar_E, i):
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
                 bp = bp_bases[bp_idx]
                 bj = bp[0]
                 bim1 = bp[1]
-                # Use advanced indexing to handle scalar JAX arrays properly
-                base_en = jnp.take(current_bar_E, j) * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
+                base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
                 return jnp.where(cond, base_en * P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
             terms = get_all_terms(jnp.arange(seq_len + 1), jnp.arange(NBPS))
