@@ -22,6 +22,11 @@ jax.config.update("jax_enable_x64", True)
 f64 = jnp.float64
 Array = jnp.ndarray
 
+
+def _as_int(x: Array) -> Array:
+    """Convert tracer-friendly scalar to int32 for indexing."""
+    return lax.convert_element_type(x, jnp.int32)
+
 class InsideTablesLike(Protocol):
     """Protocol capturing the inside tables required for outside DP."""
 
@@ -70,8 +75,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             def get_j_bp_term(j, bp_idx):
                 cond = (j < i - 1)
                 bp = bp_bases[bp_idx]
-                bj = bp[0]
-                bim1 = bp[1]
+                bj = _as_int(bp[0])
+                bim1 = _as_int(bp[1])
                 base_en = current_bar_E[j] * padded_p_seq[j, bj] * padded_p_seq[i-1, bim1]
                 return jnp.where(cond, base_en * P[bp_idx, j, i-1] * em.en_ext_branch(bj, bim1), 0.0)
             get_all_terms = vmap(vmap(get_j_bp_term, (0, None)), (None, 0))
@@ -88,8 +93,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
     def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
         def get_bp_ij(bp_idx_ij, ij_offset):
             bp = bp_bases[bp_idx_ij]
-            bi = bp[0]
-            bj = bp[1]
+            bi = _as_int(bp[0])
+            bj = _as_int(bp[1])
             bp_ij_sm = jnp.zeros((), dtype=bar_P.dtype)
 
             # Right bulge, note i = h - 1
@@ -151,8 +156,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         rup_offsets = jnp.arange(max_lup_rup) # 0, 1, ...
 
         bp_hl = bp_bases[bp_idx_hl]
-        bh = bp_hl[0]
-        bl = bp_hl[1]
+        bh = _as_int(bp_hl[0])
+        bl = _as_int(bp_hl[1])
 
         valid_outer = (h > 0) & (h < seq_len + 1) & (l + 1 < seq_len + 1)
 
@@ -187,8 +192,8 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             valid_ij = ij_cond & len_cond
 
             bp = bp_bases[bp_idx_ij]
-            bi = bp[0]
-            bj = bp[1]
+            bi = _as_int(bp[0])
+            bj = _as_int(bp[1])
 
 
             def get_mmij_term(bip1, bjm1):
@@ -239,12 +244,11 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                     return z_b_sm
 
-                get_all_zb_terms = vmap(vmap(z_b_fn, (0, None)), (None, 0))
+                get_all_zb_terms = vmap(z_b_fn)(N4)
 
-                bp_1n_sm += jnp.sum(get_all_zb_terms(N4))
+                bp_1n_sm += jnp.sum(get_all_zb_terms)
                 return bp_1n_sm
-            get_all_1n_terms = vmap(vmap(vmap(get_bp_1n_sm, (0, None, None)),
-                                        (None, 0, None)), (None, None, 0))
+            get_all_1n_terms = vmap(vmap(get_bp_1n_sm, (0, None)), (None, 0))
             sm += jnp.sum(get_all_1n_terms(N4, N4))
 
 
