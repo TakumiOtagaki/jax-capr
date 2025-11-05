@@ -433,13 +433,12 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                     unpaired_factor = lax.pow(base_multi_unpaired * s_table[1], jnp.asarray(gap, dtype=bar_P.dtype))
                     unpaired_factor *= s_table[1]
 
-                    def accumulate_bp(bp_idx):
-                        bp = bp_bases[bp_idx]
+                    def accumulate_bp(bp_idx_ij):
+                        bp = bp_bases[bp_idx_ij]
                         bi = int(bp[0])
                         bj = int(bp[1])
                         branch_penalty = em.en_multi_branch(bi, bj)
-                        nuc_weight = padded_p_seq[i, bi] * padded_p_seq[j, bj]
-                        return bar_P[bp_idx, i, j] * branch_penalty * nuc_weight * unpaired_factor
+                        return bar_P[bp_idx_ij, i, j] * branch_penalty * padded_p_seq[i, bi] * padded_p_seq[j, bj] * unpaired_factor
 
                     inner_sum = jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
                     return s_table[1] * inner_sum
