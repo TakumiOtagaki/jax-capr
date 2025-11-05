@@ -411,9 +411,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             multi_unpaired_factor = s_table[1] * em.en_multi_unpaired()
 
             # 共通項
-            sm_M2 += s_table[1] * bar_M[2, h - 1, l] * multi_unpaired_factor
-            sm_M1 += s_table[1] * bar_M[1, h - 1, l] * multi_unpaired_factor
-            sm_M0 += s_table[1] * bar_M[0, h - 1, l] * multi_unpaired_factor
+            sm_M2 += bar_M[2, h - 1, l] * multi_unpaired_factor
+            sm_M1 += bar_M[1, h - 1, l] * multi_unpaired_factor
+            sm_M0 += bar_M[0, h - 1, l] * multi_unpaired_factor
 
             # P 由来の項
             def get_bp_idx_hm1_lp1_term(bp_idx_hm1_lp1):
@@ -438,10 +438,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
                 get_all_bp_i_hm1_terms = vmap(get_idx_bp_i_hm1)
                 bp_sum_i = jnp.sum(get_all_bp_i_hm1_terms(jnp.arange(NBPS)))
                 return jnp.where(cond, bp_sum_i * ml_i_to_M1, 0.0), jnp.where(cond, bp_sum_i * ml_i_to_M0, 0.0)
-            # TODO: tuple を返すようなものに対して vectorization した時に出てくる出力は、以下のように reasonable か？
-            all_i_terms = vmap(get_i_term)(jnp.arange(seq_len + 1))
-            sm_M1 += jnp.sum(all_i_terms[0])
-            sm_M0 += jnp.sum(all_i_terms[1])
+
+            m1_terms, m0_terms = vmap(get_i_term)(jnp.arange(seq_len + 1))
+            sm_M1 += jnp.sum(m1_terms)
+            sm_M0 += jnp.sum(m0_terms)
             return jnp.where(cond, sm_M0, bar_M[0, h, l]), jnp.where(cond, sm_M1, bar_M[1, h, l]), jnp.where(cond, sm_M2, bar_M[2, h, l])
 
         h_indices = jnp.arange(d + 1, seq_len + 1)
@@ -514,8 +514,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
                 def valid_branch(_):
                     gap = j - l - 1
-                    unpaired_factor = lax.pow(base_multi_unpaired * s_table[1], jnp.asarray(gap, dtype=bar_P.dtype))
-                    unpaired_factor *= s_table[1]
+                    unpaired_factor = lax.pow(
+                        base_multi_unpaired,
+                        jnp.asarray(gap, dtype=bar_P.dtype),
+                    ) * s_table[j - l]
 
                     def accumulate_bp(bp_idx_ij):
                         bp = bp_bases[bp_idx_ij]
@@ -574,4 +576,3 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
         return (bar_P, bar_M, bar_E)
 
     return outside_partition
-
