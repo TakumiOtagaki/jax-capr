@@ -329,8 +329,6 @@ def _construct_outside_partition_fn(
         get_all_bp_idx_ij = vmap(get_all_bp_idx_ij, (None, None, 0))
         all_terms = get_all_bp_idx_ij(jnp.arange(NBPS), lup_offsets, rup_offsets)
         return jnp.sum(all_terms)
-    
-
 
     def fill_bar_P(
             d: int,
@@ -341,63 +339,67 @@ def _construct_outside_partition_fn(
             bar_Pm: Array,
             bar_Pm1: Array,
             bar_E: Array,
+            s_table: Array,
         ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
-        def get_bp_stack(bp_idx_ij, l, bh, bl): # for bar_P[bp_idx_of_hl, h, l] の計算. 
-            # bp_idx は bp_idx_of_ij となっていることに注意する。
-            # l - h = d ゆえ h = l - d
+        def get_bp_stack(bp_idx_ij, l, bh, bl):
             h = l - d
             i = h - 1
             j = l + 1
-            cond = (0 < i) & (j < seq_len) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
+            cond = (0 < i) & (j < seq_len)
             bp = bp_bases[bp_idx_ij]
-            bi = bp[0] # bi; i = h - 1
-            bj = bp[1] # bj; j = l + 1
-            return jnp.where(cond, 
-                bar_P[bp_idx_ij, h-1, l+1]*padded_p_seq[h-1, bi] * \
-                padded_p_seq[l+1, bj]*em.en_stack(bi, bj, bh, bl),
-                0.0
+            bi = bp[0]
+            bj = bp[1]
+            return jnp.where(
+                cond,
+                bar_P[bp_idx_ij, h - 1, l + 1]
+                * padded_p_seq[h - 1, bi]
+                * padded_p_seq[l + 1, bj]
+                * em.en_stack(bi, bj, bh, bl),
+                0.0,
             )
 
         def get_bp_l_multi_sm(l):
-            # h, l, bh, bl が与えられた時の multiloop による寄与を計算する。
             h = l - d
-            def get_multi_i_term(i): # bl は上で定義されている
-                cond = (i < h)
-                return jnp.where(cond,
-                                 (s_table[1] * ML[1, i+1, h-1] * bar_Pm1[i, l] 
-                                   + bar_Pm[i, l] * (s_table[1] * ML[1, i+1, h-1] 
-                                    + (s_table[1] * em.en_multi_unpaired())**(h - i - 1) * s_table[1])),
-                                 0.0)
-            all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len+1))
+
+            def get_multi_i_term(i):
+                cond = i < h
+                return jnp.where(
+                    cond,
+                    (
+                        s_table[1] * ML[1, i + 1, h - 1] * bar_Pm1[i, l]
+                        + bar_Pm[i, l]
+                        * (
+                            s_table[1] * ML[1, i + 1, h - 1]
+                            + (s_table[1] * em.en_multi_unpaired()) ** (h - i - 1) * s_table[1]
+                        )
+                    ),
+                    0.0,
+                )
+
+            all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len + 1))
             return jnp.sum(jnp.asarray(all_i_terms))
 
-        def get_bp_l_sm(bp_idx_hl, l): # ある l に対してそれに対応する summation を計算する。
-            # bar_P(h, l) の計算をしている。sum_{i, j} B(f_2) * bar_P(i, j) の部分に該当する。
+        def get_bp_l_sm(bp_idx_hl, l):
             h = l - d
-            cond = (0 <= h) & (l <= seq_len)
             bp = bp_bases[bp_idx_hl]
-            bh = bp[0] # bi; i = h - 1
-            bl = bp[1] # bj; j = l + 1
+            bh = bp[0]
+            bl = bp[1]
             sm = jnp.zeros((), dtype=bar_P.dtype)
 
-            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P)
+            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
             sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
 
-            # stacks
             stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
             sm += jnp.sum(stack_summands) * s_table[2]
 
-            # Multi-loops
             sm += get_bp_l_multi_sm(l)
 
-            # Exterior
             sm += bar_E[h] * E[l + 1]
 
-            cond = (1 <= h) & (l < seq_len - 1) # 0 origin であり,l + 1 <= j < seq_len を満たすべきだから
-            return jnp.where(cond, sm, bar_P[bp_idx_hl, h, l])
-
+            cond_valid = (0 <= h) & (l < seq_len - 1)
+            return jnp.where(cond_valid, sm, bar_P[bp_idx_hl, h, l])
 
         def get_bp_all_ls(bp_idx_hl):
             ls = jnp.arange(seq_len + 1)
