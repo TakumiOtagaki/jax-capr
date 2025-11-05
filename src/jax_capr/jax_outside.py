@@ -441,49 +441,65 @@ def _construct_outside_partition_fn(
 
             multi_unpaired_factor = s_table[1] * em.en_multi_unpaired()
 
-            # 共通項
             sm_M2 += bar_M[2, h - 1, l] * multi_unpaired_factor
             sm_M1 += bar_M[1, h - 1, l] * multi_unpaired_factor
             sm_M0 += bar_M[0, h - 1, l] * multi_unpaired_factor
 
-            # P 由来の項
             def get_bp_idx_hm1_lp1_term(bp_idx_hm1_lp1):
                 bp_hm1_lp1 = bp_bases[bp_idx_hm1_lp1]
                 hm1 = bp_hm1_lp1[0]
                 lp1 = bp_hm1_lp1[1]
-                return s_table[2] * bar_P[bp_idx_hm1_lp1, h - 1, l + 1] \
-                    * padded_p_seq[h-1, hm1] * padded_p_seq[l + 1, lp1] * em.en_multi_closing(hm1, lp1)
+                return (
+                    s_table[2]
+                    * bar_P[bp_idx_hm1_lp1, h - 1, l + 1]
+                    * padded_p_seq[h - 1, hm1]
+                    * padded_p_seq[l + 1, lp1]
+                    * em.en_multi_closing(hm1, lp1)
+                )
+
             get_all_bp_terms = vmap(get_bp_idx_hm1_lp1_term)
             sm_M2 += jnp.sum(get_all_bp_terms(jnp.arange(NBPS)))
 
-            # sum_i の項 only for the bar_M1 and bar_M0
             def get_i_term(i):
-                cond = (i < h - 1)
+                cond_i = i < h - 1
                 ml_i_to_M1 = bar_M[2, i, l]
                 ml_i_to_M0 = bar_M[0, i, l] + bar_M[1, i, l]
+
                 def get_idx_bp_i_hm1(bp_idx_ihm1):
                     bp_ihm1 = bp_bases[bp_idx_ihm1]
                     bi = bp_ihm1[0]
                     bhm1 = bp_ihm1[1]
-                    return P[bp_idx_ihm1, i, h - 1] * em.en_multi_branch(bi, bhm1) * padded_p_seq[i, bi] * padded_p_seq[h - 1, bhm1]
+                    return (
+                        P[bp_idx_ihm1, i, h - 1]
+                        * em.en_multi_branch(bi, bhm1)
+                        * padded_p_seq[i, bi]
+                        * padded_p_seq[h - 1, bhm1]
+                    )
+
                 get_all_bp_i_hm1_terms = vmap(get_idx_bp_i_hm1)
                 bp_sum_i = jnp.sum(get_all_bp_i_hm1_terms(jnp.arange(NBPS)))
-                return jnp.where(cond, bp_sum_i * ml_i_to_M1, 0.0), jnp.where(cond, bp_sum_i * ml_i_to_M0, 0.0)
+                return (
+                    jnp.where(cond_i, bp_sum_i * ml_i_to_M1, 0.0),
+                    jnp.where(cond_i, bp_sum_i * ml_i_to_M0, 0.0),
+                )
 
             m1_terms, m0_terms = vmap(get_i_term)(jnp.arange(seq_len + 1))
             sm_M1 += jnp.sum(m1_terms)
             sm_M0 += jnp.sum(m0_terms)
-            return jnp.where(cond, sm_M0, bar_M[0, h, l]), jnp.where(cond, sm_M1, bar_M[1, h, l]), jnp.where(cond, sm_M2, bar_M[2, h, l])
 
-        # h_indices = jnp.arange(d + 1, seq_len + 1)
+            return (
+                jnp.where(cond, sm_M0, bar_M[0, h, l]),
+                jnp.where(cond, sm_M1, bar_M[1, h, l]),
+                jnp.where(cond, sm_M2, bar_M[2, h, l]),
+            )
+
         h_indices = jnp.arange(seq_len + 1)
-        l_indices = h_indices + d   
+        l_indices = h_indices + d
         updates = vmap(accumulate_single_h)(h_indices)
-        bar_M = bar_M.at[0, h_indices, l_indices].set(updates[0], mode='drop')
-        bar_M = bar_M.at[1, h_indices, l_indices].set(updates[1], mode='drop')
-        bar_M = bar_M.at[2, h_indices, l_indices].set(updates[2], mode='drop')
+        bar_M = bar_M.at[0, h_indices, l_indices].set(updates[0], mode="drop")
+        bar_M = bar_M.at[1, h_indices, l_indices].set(updates[1], mode="drop")
+        bar_M = bar_M.at[2, h_indices, l_indices].set(updates[2], mode="drop")
         return bar_M
-
 
     def fill_bar_Pm(
         d: int,
@@ -491,11 +507,13 @@ def _construct_outside_partition_fn(
         ML: Array,
         bar_P: Array,
         bar_Pm: Array,
+        s_table: Array,
     ) -> Array:
         r"""
         Pm[i, l] = \sum_{j} (l < j) s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j] * ML[1, l+1, j-1]
         を同じ対角線上の i,l 全てについて計算する: l - i = d
         """
+
         def accumulate_single_i(i):
             l = i + d
 
