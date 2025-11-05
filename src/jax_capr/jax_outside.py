@@ -364,7 +364,7 @@ def _construct_outside_partition_fn(
             h = l - d
 
             def get_multi_i_term(i):
-                cond = i + 1 <= h - 1
+                cond = i + 1 < h - 1
                 return jnp.where(
                     cond,
                     (
