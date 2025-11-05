@@ -82,12 +82,10 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             updated_bar_E = current_bar_E.at[i].set(sm)
             return updated_bar_E, None
 
-        # 2 から n まで JAX 制御フローで回す（Python ループは使わない）
         bar_xi_out, _ = scan(body, bar_E, jnp.arange(2, n+1))
         return bar_xi_out
 
 
-    # ---------- copy-pasted from jax_rnafold.d0.ss line123 - 213 ----------
     @jit
     def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P):
         def get_bp_ij(bp_idx_ij, ij_offset):
@@ -354,11 +352,9 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
 
     def fill_bar_M(
         d: int,
-        ML: Array,
         bar_M: Array,
         bar_P: Array,
         padded_p_seq: Array,
-        P: Array,
     ) -> Array:
         r"""
         以下を全ての h, l (l - h = d) について計算する。
@@ -534,7 +530,7 @@ def get_outside_partition_fn(em: energy.Model, seq_len: int, inside: InsideCompu
             bar_Pm = fill_bar_Pm(d, padded_p_seq, inside.ML, bar_P, bar_Pm)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1)
             bar_M = fill_bar_M(
-                d, inside.ML, bar_M, bar_P, padded_p_seq, inside.P
+                d, bar_M, bar_P, padded_p_seq
             )
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
