@@ -16,3 +16,10 @@
 - `bar_MB` と `bar_M` は forward の `fill_multibranch`／`fill_multi` と鏡写しになるよう、`i` 降順の `scan` と `j`・`nb` の `vmap` で構成する。`ML[idx, k+1, j]` と `MB[i, k]` の掛け合わせで `bar_M` ⇄ `bar_MB` を連結する。
 - スタック／マルチ閉じ／バルジ／内部ループの寄与は `BP` 次元を `vmap` し、ループ長の条件は `jnp.arange` とマスクで吸収する。特別ループ（2×2, 2×3, 3×2）と一般内部ループは `MAX_LOOP` を上限に一括演算し、`bar_OMM` を経由して最終的に `bar_P` へ戻す。
 - 全行程で `s_table` の添字と指数が forward と一致するかを都度確認し、実装後は `uv run python tests/test_outside_vs_vienna.py` を用いて `max_abs < 1e-6`, `mean_abs < 1e-7` を達成するまで微調整する。
+
+## 2025-11-05 Outside テーブルの意味整理
+- `bar_P[bp, i, j]` は「(i,j) が外側ペア、塩基対種 bp である構造」の累積 outside 重み。`fill_bar_P` は bulge・内部ループ特殊形・スタック・マルチ閉鎖など forward で `P` に足し込んだ全項目を逆向きに再分配する。
+- 一般内部ループは forward で `OMM[i,j]` を参照していたため、outside ではまず `bar_OMM[i,j]` に寄与を集約し、`fill_bar_OMM` で `bar_P[bp,i,j] += bar_OMM[i,j] · B_omm(bim1,bjp1)` を行う。`bar_OMM[i,j]` は「(i,j) を内側ペアとする一般内部ループ全て」の外側重みの総和。
+- マルチループ枝の補助状態 `MB[i,k]` も forward で一旦集約しているので、outside では `bar_MB[i,k]` を通じて `bar_M` と `bar_P` に戻す。`bar_MB[i,k]` は「(i,k) が multibranch の枝を閉じる外側構造」の重み。
+- `bar_M[nb,i,j]` は `ML[nb,i,j]` の outside。未対合遷移・枝分岐をそれぞれ逆伝播し、`bar_MB` と `bar_P` を介して multibranch の全寄与をカバーする。
+- いずれも forward の集約テーブルを鏡写しにしないと該当ループの outside が欠落するため、`bar_P` の更新時は `delta_bar_P` と `delta_bar_OMM`（および `bar_MB` 経由の寄与）をセットで処理する必要がある。
