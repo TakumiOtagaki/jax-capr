@@ -122,8 +122,8 @@ def _construct_outside_partition_fn(
             def compute_right(_):
                 return (
                     bar_P[bp_idx_ij, i, j]
-                    * padded_p_seq[i, bi]
-                    * padded_p_seq[j, bj]
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[l, bl]
                     * em.en_bulge(bi, bj, bh, bl, j - l - 1)
                     * s_table[j - l + 1]
                 )
@@ -140,8 +140,8 @@ def _construct_outside_partition_fn(
             def compute_left(_):
                 return (
                     bar_P[bp_idx_ij, i, j]
-                    * padded_p_seq[i, bi]
-                    * padded_p_seq[j, bj]
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[l, bl]
                     * em.en_bulge(bi, bj, bh, bl, h - i - 1)
                     * s_table[h - i + 1]
                 )
@@ -242,8 +242,8 @@ def _construct_outside_partition_fn(
                 bp_1n_sm += jnp.where(
                     cond_11,
                     bar_P[bp_idx_ij, i, j]
-                    * padded_p_seq[i, bi]
-                    * padded_p_seq[j, bj]
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[l, bl]
                     * pr_ij_mm
                     * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bip1, bjm1, 1, 1)
                     * s_table[4],
@@ -258,8 +258,8 @@ def _construct_outside_partition_fn(
 
                     right_term = (
                         bar_P[bp_idx_ij, i, j]
-                        * padded_p_seq[i, bi]
-                        * padded_p_seq[j, bj]
+                        * padded_p_seq[h, bh]
+                        * padded_p_seq[l, bl]
                         * padded_p_seq[l + 1, b]
                         * pr_ij_mm
                         * il_en
@@ -273,7 +273,7 @@ def _construct_outside_partition_fn(
                     left_term = (
                         bar_P[bp_idx_ij, i, j]
                         * padded_p_seq[h, bh]
-                        * padded_p_seq[j - 2, bl]
+                        * padded_p_seq[l, bl]
                         * padded_p_seq[h - 1, b]
                         * pr_ij_mm
                         * il_en
@@ -364,7 +364,7 @@ def _construct_outside_partition_fn(
                 return (
                     bar_P[bp_idx_ij, i, j]
                     * padded_p_seq[h, bh]
-                    * padded_p_seq[j, bl]
+                    * padded_p_seq[l, bl]
                     * em.en_stack(bi, bj, bh, bl)
                 )
 
