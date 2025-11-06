@@ -9,14 +9,14 @@
 
 ## 2. DP テーブル対応表
 
-| CapR (log 空間) | 役割 | jax-rnafold d0 (`ss.py`) | 備考 |
-| --- | --- | --- | --- |
-| `_Alpha_outer[i]` (`CapR.cpp:181-192`) | 区間 [1,i] の外部 (外側) 貢献 | `E[i]` (`d0/ss.py:56-69`) | jax は線形空間。`E[i]` は prefix の外部 PF。 |
-| `_Alpha_stem[i][d]` (`CapR.cpp:69-94`) | 塩基対 (i+1, j) を含む区間の内部 PF | `P[bp_idx, i, j]` (`d0/ss.py:375-411`) | jax は塩基対種類ごとに保持。CapR は BP 種類を添字に使わずに logsum。 |
-| `_Alpha_stemend` (`CapR.cpp:148-176`) | 塩基対 (i, j+1) の末端状態 (hairpin/multi/内部ループ) | `fill_paired` 内の hairpin/bulge/internal/multi 足し込み (`d0/ss.py:385-400`) | jax は都度合算し `P` に書き込むので独立テーブル不要。 |
-| `_Alpha_multi` / `_Alpha_multi1` / `_Alpha_multi2` / `_Alpha_multibif` (`CapR.cpp:95-147`) | マルチループ分割用の補助状態 (Vienna の `QM`, `QM1` 相当) | `ML[nb, i, j]` (`d0/ss.py:413-429`) と `MB[i, j]` (`d0/ss.py:100-120`) | `ML[2]` が閉鎖状態、`ML[1]` が 1 本分岐保持、`ML[0]` が遷移バッファ。`MB` が CapR の `_Alpha_multibif` に該当。 |
-| `_Beta_*` 群 (`CapR.cpp:426-555`) | 外側再帰 (outside) | 現状未実装 | jax-rnafold d0 には outside テーブルが無い。 |
-| 外部ループ dangle (`CalcDangleEnergy`) | 外側/内側共通の 5'/3' dangle エネルギー | `en_ext_branch`, `en_multi_branch`, dangle は energy モデル内 (`d0/energy.py`) | jax ではエネルギーが Boltzmann 重みに変換済み。 |
+| CapR (log 空間)                                                                            | 役割                                                      | jax-rnafold d0 (`ss.py`)                                                       | 備考                                                                                                            |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `_Alpha_outer[i]` (`CapR.cpp:181-192`)                                                     | 区間 [1,i] の外部 (外側) 貢献                             | `E[i]` (`d0/ss.py:56-69`)                                                      | jax は線形空間。`E[i]` は prefix の外部 PF。                                                                    |
+| `_Alpha_stem[i][d]` (`CapR.cpp:69-94`)                                                     | 塩基対 (i+1, j) を含む区間の内部 PF                       | `P[bp_idx, i, j]` (`d0/ss.py:375-411`)                                         | jax は塩基対種類ごとに保持。CapR は BP 種類を添字に使わずに logsum。                                            |
+| `_Alpha_stemend` (`CapR.cpp:148-176`)                                                      | 塩基対 (i, j+1) の末端状態 (hairpin/multi/内部ループ)     | `fill_paired` 内の hairpin/bulge/internal/multi 足し込み (`d0/ss.py:385-400`)  | jax は都度合算し `P` に書き込むので独立テーブル不要。                                                           |
+| `_Alpha_multi` / `_Alpha_multi1` / `_Alpha_multi2` / `_Alpha_multibif` (`CapR.cpp:95-147`) | マルチループ分割用の補助状態 (Vienna の `QM`, `QM1` 相当) | `ML[nb, i, j]` (`d0/ss.py:413-429`) と `MB[i, j]` (`d0/ss.py:100-120`)         | `ML[2]` が閉鎖状態、`ML[1]` が 1 本分岐保持、`ML[0]` が遷移バッファ。`MB` が CapR の `_Alpha_multibif` に該当。 |
+| `_Beta_*` 群 (`CapR.cpp:426-555`)                                                          | 外側再帰 (outside)                                        | 現状未実装                                                                     | jax-rnafold d0 には outside テーブルが無い。                                                                    |
+| 外部ループ dangle (`CalcDangleEnergy`)                                                     | 外側/内側共通の 5'/3' dangle エネルギー                   | `en_ext_branch`, `en_multi_branch`, dangle は energy モデル内 (`d0/energy.py`) | jax ではエネルギーが Boltzmann 重みに変換済み。                                                                 |
 
 **主な差分**
 - CapR は log ドメイン (`log Z`) で `logsumexp` を明示的に取る。jax-rnafold は Boltzmann 重みをそのまま積和。
@@ -62,12 +62,16 @@
 
 ## 6. 今後のタスク指針
 1. `jax_rnafold/d0/ss.py` に outside DP を追加し、`P`, `ML`, `MB`, `E`, `OMM` に対応する外側テンソルを返す JIT 互換関数を構築する。
+   * MB と OMM の outside は実装しない。実装時に注意すれば問題ない。
 2. outside を用いた `p(i, loop)` 計算の JAX 実装を作成し、CapR の log 空間計算との整合性を確認する。
-3. CapR (Turner1999) と jax-rnafold (Turner1999) の出力比較テストを追加。`np.allclose` ではなく相対誤差ベースで評価。
+3. CapR (Turner1999) と jax-rnafold (Turner1999) の出力比較テストを追加。`np.allclose` でみたい. 
 4. 線形化 (LinearCapR) との比較は後続。まずは厳密版で一致を目指す。
 
 ## 7. 未解決事項・質問候補
 - outside DP を効率的に実装するにあたり、`OMM` のような補助テーブルをどう逆方向に扱うか (外部ミスマッチの勾配相当)。
+  - 現在の実装で問題ない。omm のような fn を定義して進めている。
 - jax-rnafold で Turner1999 パラメータを使う際の標準 API 呼び出し手順 (エネルギーモデル生成部の確認が必要)。
+  - test_outside_vs_vienna.py のように model = energy.JaxNNModel(params_path=TURNER_1999) とすればよい。
 - 最大スパン制限 (`_maximal_span`) を取り入れる必要があるか。CapR との比較を厳密にするなら導入が望ましい。
+  - 不要. gpu による高速化がきたいされるため、最大スパン制限は入れない.
 
