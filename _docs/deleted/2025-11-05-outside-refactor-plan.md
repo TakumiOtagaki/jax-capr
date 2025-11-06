@@ -4,8 +4,6 @@
 - `src/jax_capr/jax_outside.py` の `fill_bar_P` / `psum_outer_internal_loops` が forward (`psum_internal_loops`) と整合しておらず、以下のミスがある。
   - outside にもかかわらず inside テーブル `P` を参照している箇所がある（`bar_P` を使うべき箇所）。
   - `s_table`, `em`, `two_loop_length` を `psum_outer_internal_loops` に渡しておらず呼び出し側で型崩れ。
-  - 一般内部ループの寄与を `bar_OMM` に蓄積した後、`fill_bar_OMM` で `bar_P` へ戻す処理が未実装。
-  - multibranch 補助テーブル `bar_MB` も未実装のままで、`fill_multi` の逆写像が存在しない。
 
 ## 方針
 1. forward の `fill_paired` → `psum_internal_loops` をそのまま鏡写しにし、outside で必要な係数を抽出する。  
