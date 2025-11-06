@@ -8,3 +8,4 @@
   - `get_bp_h_multi_sm` の係数が forward の `em.en_multi_unpaired` と `s_table` の掛け方と一致しているか、数式レベルで突合する。特に `s_table[h - i]` の適用タイミングが forward のスケーリングと同型かをチェックする。
 - テスト出力では `bar_Pm` が最大でも `~5×10^-2` 程度に収まる一方、`bar_Pm1[3,4] ≈ 8.7×10^5` まで急増していた。当初は `bar_Pm1` から `bar_P` へ戻る経路が暴走の主因と疑ったが、`ML[1, :, :]` が全 0 の配列では `get_bp_h_multi_sm` が 0 になり、コメントアウトしても `bar_P` に変化が無いことを確認。つまり multibranch は現状のシーケンスでは無関与であり、問題は bulge / internal / stacking 系の回路に絞られる。
 - 次の焦点: `psum_outer_bulges` / `psum_outer_internal_loops` / スタック項を Vienna 実装と突き合わせ、不要な寄与や条件抜けが無いか精査する。特に一般内部ループで `bar_OMM` を省略した影響がどこに出ているか確認する。
+- GCGGAAACCAGC（bulge を含む配列）で比較したところ、`bpp(2,7)` の差分が約 0.102。スタック寄与は 0 で、bulge 逆伝播が `bar_P` を押し上げている。`bp_idx` で許される組み合わせのみにループしているため塩基対自体は制限されているものの、`bpp(2, 7)` が Vienna より 1.1 倍ほど大きく、bulge 再帰でスケーリングやエネルギー係数が微妙にズレている可能性が高い。引き続き bulge・internal の係数を forward（`ss.py`）と突き合わせて確認する。
