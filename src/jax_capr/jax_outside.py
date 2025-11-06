@@ -587,7 +587,7 @@ def _construct_outside_partition_fn(
             l = i + d
 
             def accumulate_single_j(j):
-                cond_j = (l < j) & (j < seq_len)
+                cond_j = (1 < j - l - 1) & (j < seq_len + 1) # 1 < j-l となっていたのを 修正
 
                 def valid_branch(_):
                     gap = j - l - 1
