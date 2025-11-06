@@ -115,30 +115,36 @@ def _construct_outside_partition_fn(
             i = h - 1
             cond_ij = (j < seq_len + 1) & (0 <= i)
             right_cond = h < l
-            bp_ij_sm += jnp.where(
-                right_cond & cond_ij,
-                bar_P[bp_idx_ij, i, j]
-                * padded_p_seq[i, bi]
-                * padded_p_seq[j, bj]
-                * em.en_bulge(bi, bj, bh, bl, j - l - 1)
-                * s_table[j - l + 1],
-                0.0,
-            )
+            cond_right = right_cond & cond_ij
+
+            def compute_right(_):
+                return (
+                    bar_P[bp_idx_ij, i, j]
+                    * padded_p_seq[i, bi]
+                    * padded_p_seq[j, bj]
+                    * em.en_bulge(bi, bj, bh, bl, j - l - 1)
+                    * s_table[j - l + 1]
+                )
+
+            bp_ij_sm += lax.cond(cond_right, compute_right, lambda _: 0.0, operand=None)
 
             # Left bulge, note j = l + 1
             i = h - 2 - ij_offset
             j = l + 1
             cond_ij = (j < seq_len + 1) & (0 <= i)
             left_cond = h < l
-            bp_ij_sm += jnp.where(
-                left_cond & cond_ij,
-                bar_P[bp_idx_ij, i, j]
-                * padded_p_seq[i, bi]
-                * padded_p_seq[j, bj]
-                * em.en_bulge(bi, bj, bh, bl, h - i - 1)
-                * s_table[h - i + 1],
-                0.0,
-            )
+            cond_left = left_cond & cond_ij
+
+            def compute_left(_):
+                return (
+                    bar_P[bp_idx_ij, i, j]
+                    * padded_p_seq[i, bi]
+                    * padded_p_seq[j, bj]
+                    * em.en_bulge(bi, bj, bh, bl, h - i - 1)
+                    * s_table[h - i + 1]
+                )
+
+            bp_ij_sm += lax.cond(cond_left, compute_left, lambda _: 0.0, operand=None)
 
             return bp_ij_sm
 
@@ -365,21 +371,22 @@ def _construct_outside_partition_fn(
         def get_bp_h_multi_sm(h, l):
 
             def get_multi_i_term(i):
-                cond = i + 1 < h - 1
-                return jnp.where(
-                    cond,
-                    (
-                        s_table[1] * ML[1, i + 1, h - 1] * bar_Pm1[i, l]
+                cond = (i + 1 < h - 1) & (i > 0)
+
+                def compute(_):
+                    ml_val = ML[1, i + 1, h - 1]
+                    multi_branch = (
+                        s_table[1] * ml_val * bar_Pm1[i, l]
                         + bar_Pm[i, l]
                         * (
-                            s_table[1] * ML[1, i + 1, h - 1]
-                            + lax.pow(
-                                em.en_multi_unpaired(),
-                                (h - i - 1))
-                            ) * s_table[h - i]
-                    ),
-                    0.0,
-                )
+                            s_table[1] * ml_val
+                            + lax.pow(em.en_multi_unpaired(), (h - i - 1))
+                        )
+                        * s_table[h - i]
+                    )
+                    return multi_branch
+
+                return lax.cond(cond, compute, lambda _: 0.0, operand=None)
 
             all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len + 1))
             return jnp.sum(jnp.asarray(all_i_terms))
