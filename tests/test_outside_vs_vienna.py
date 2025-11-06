@@ -15,6 +15,7 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
     # RNA.params_load_RNA_Turner2004()
     md = RNA.md()
     md.dangles = 0
+    # md.sfact = 0.0 # これであってるか...??
     fc = RNA.fold_compound(seq, md)
     fc.pf()
     bpp = fc.bpp()
@@ -31,7 +32,8 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     sequences = [
-        "GGGGAAAACCCC",
+        # "GGGGAAAACCCC",
+        "GCGGAAACCAGC"
         # "AUGGCUACGUAC",
         # "CCGAUAGCUAAG",
         # "GGCAAUCCGAUC",
@@ -40,7 +42,7 @@ def test_inside_outside_matches_vienna():
     for seq in sequences:
         print(f"Sequence: {seq}")
         ours = compute_inside_outside(seq, model)
-        print("ours:", pd.DataFrame(ours.bpp))
+        print("ours:\n", pd.DataFrame(ours.bpp))
 
         print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
         # print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
