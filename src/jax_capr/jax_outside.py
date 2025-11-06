@@ -348,6 +348,7 @@ def _construct_outside_partition_fn(
             bar_P: Array,
             bar_Pm: Array,
             bar_Pm1: Array,
+            bar_M: Array,
             bar_E: Array,
             s_table: Array,
         ) -> Array:
@@ -370,28 +371,6 @@ def _construct_outside_partition_fn(
 
             return lax.cond(cond, stack_val, lambda _: 0.0, operand=None)
 
-        def get_bp_h_multi_sm(h, l):
-            # TODO: おそらく bh, bl についての条件とか、それを引っ張ってくるパートがない。; padded_p_seq[h, bh] * padded_p_seq[l, bl] をかけておく。
-            def get_multi_i_term(i):
-                cond = (i + 1 < h - 1) & (i >= 0)
-
-                def compute(_):
-                    ml_val = ML[1, i + 1, h - 1]
-                    multi_branch = (
-                        s_table[1] * ml_val * bar_Pm1[i, l]
-                        + bar_Pm[i, l]
-                        * (
-                            s_table[1] * ml_val
-                            + s_table[h - i] * lax.pow(em.en_multi_unpaired(), (h - i - 1))
-                        )
-                    )
-                    return multi_branch
-
-                return lax.cond(cond, compute, lambda _: 0.0, operand=None)
-
-            all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len + 1))
-            return jnp.sum(jnp.asarray(all_i_terms))
-
         def get_bp_h_sm(bp_idx_hl, h):
             l = h + d
             bp = bp_bases[bp_idx_hl]
@@ -399,6 +378,18 @@ def _construct_outside_partition_fn(
             bl = bp[1]
             valid_idx = (h >= 0) & (l < seq_len) & (em.hairpin <= l - h - 1)
 
+            def get_multi_j_term(j):
+                cond = (l < j) & (j < seq_len + 1)
+
+                def compute(_):
+                    multi_branch = (
+                        ML[1, l + 1, j] * bar_M[2, h, j] \
+                        + ML[0, l + 1, j] * (bar_M[0, h, j] + bar_M[1, h, j])
+                    ) * em.en_multi_branch(bh, bl) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
+                    return multi_branch
+
+                return lax.cond(cond, compute, lambda _: 0.0, operand=None)
+        
             def compute_sm(_):
                 sm = jnp.zeros((), dtype=bar_P.dtype)
 
@@ -408,7 +399,11 @@ def _construct_outside_partition_fn(
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
 
-                sm += get_bp_h_multi_sm(h, l) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
+                # sm += get_bp_h_multi_sm(h, l) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
+                # sm += get_bp_h_multi_sm(h, bp_idx_hl)
+
+                all_multi_j_terms = vmap(get_multi_j_term)(jnp.arange(seq_len + 1))
+                sm += jnp.sum(all_multi_j_terms)
 
                 # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
                 sm += (
@@ -649,7 +644,7 @@ def _construct_outside_partition_fn(
 
             bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
-            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_E, s_table)
+            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_M, bar_E, s_table)
             bar_M = fill_bar_M(d, bar_M, bar_P, P, padded_p_seq, s_table)
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
