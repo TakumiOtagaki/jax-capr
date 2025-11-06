@@ -9,8 +9,9 @@ from jax_rnafold.common.utils import TURNER_1999
 from jax_rnafold.common.utils import bp_bases, NBPS, MAX_LOOP
 from jax_rnafold.d0 import energy
 import jax.numpy as jnp
+from jax import config
 
-# jax.config.update("jax_disable_jit", True)
+# config.update("jax_disable_jit", True)
 
 
 def _padded_prob_seq(one_hot_seq: jnp.ndarray) -> np.ndarray:
@@ -190,41 +191,6 @@ def bulge_contribution_details(inside, outside, model, h: int, l: int) -> list[t
     return details
 
 
-def multi_contribution_per_bp(inside, outside, model, h: int, l: int) -> np.ndarray:
-    """Reconstruct multi-loop contribution mirrored from fill_bar_P."""
-
-    seq_len = int(inside.p_seq.shape[0])
-    if not (0 <= h < seq_len and 0 <= l < seq_len and l - h - 1 >= model.hairpin):
-        return np.zeros(NBPS, dtype=np.float64)
-
-    s_table = np.asarray(inside.s_table)
-    ML = np.asarray(inside.ML)
-    bar_Pm = np.asarray(outside.bar_Pm)
-    bar_Pm1 = np.asarray(outside.bar_Pm1)
-
-    total = 0.0
-
-    for i in range(seq_len + 1):
-        if not (0 <= i and i + 1 < h - 1):
-            continue
-        ml_val = ML[1, i + 1, h - 1]
-        if ml_val == 0.0 and bar_Pm[i, l] == 0.0 and bar_Pm1[i, l] == 0.0:
-            continue
-
-        s1 = s_table[1]
-        gap = h - i - 1
-        unpaired_pow = model.en_multi_unpaired() ** gap if gap > 0 else 1.0
-        multi_branch = (
-            s1 * ml_val * bar_Pm1[i, l]
-            + bar_Pm[i, l]
-            * (s1 * ml_val + unpaired_pow)
-            * s_table[gap + 1]
-        )
-        total += multi_branch
-
-    return np.full(NBPS, total, dtype=np.float64)
-
-
 def external_contribution_per_bp(inside, outside, model, h: int, l: int) -> np.ndarray:
     """Compute external (bar_E * E) contribution for each base pair type."""
 
@@ -256,13 +222,13 @@ def external_contribution_per_bp(inside, outside, model, h: int, l: int) -> np.n
 def debug_pair(inside, outside, model, h: int, l: int) -> None:
     stack_dbg = stack_contribution_per_bp(inside, outside, model, h, l)
     bulge_dbg = bulge_contribution_per_bp(inside, outside, model, h, l)
-    multi_dbg = multi_contribution_per_bp(inside, outside, model, h, l)
+    # multi_dbg = multi_contribution_per_bp(inside, outside, model, h, l)
     ext_dbg = external_contribution_per_bp(inside, outside, model, h, l)
     bulge_details = bulge_contribution_details(inside, outside, model, h, l)
     actual = np.asarray(outside.bar_P)[:, h, l]
     total_stack = float(stack_dbg.sum())
     total_bulge = float(bulge_dbg.sum())
-    total_multi = float(multi_dbg.sum())
+    # total_multi = float(multi_dbg.sum())
     total_ext = float(ext_dbg.sum())
     total_actual = float(actual.sum())
     print(f"[debug] pair ({h},{l}) stack sum={total_stack:.6e}, bar_P sum={total_actual:.6e}")
@@ -277,14 +243,14 @@ def debug_pair(inside, outside, model, h: int, l: int) -> None:
         bulge_ratio = float("nan")
     print(f"[debug] pair ({h},{l}) bulge sum={total_bulge:.6e}, bulge/actual ratio={bulge_ratio:.6e}")
     if total_actual:
-        multi_ratio = total_multi / total_actual
+        # multi_ratio = total_multi / total_actual
         ext_ratio = total_ext / total_actual
     else:
         multi_ratio = float("nan")
         ext_ratio = float("nan")
-    print(f"[debug] pair ({h},{l}) multi sum={total_multi:.6e}, multi/actual ratio={multi_ratio:.6e}")
+    # print(f"[debug] pair ({h},{l}) multi sum={total_multi:.6e}, multi/actual ratio={multi_ratio:.6e}")
     print(f"[debug] pair ({h},{l}) external sum={total_ext:.6e}, external/actual ratio={ext_ratio:.6e}")
-    residual = actual - stack_dbg - bulge_dbg - multi_dbg - ext_dbg
+    # residual = actual - stack_dbg - bulge_dbg - multi_dbg - ext_dbg
     print(f"[debug] pair ({h},{l}) inferred internal sum={float(residual.sum()):.6e}")
     if bulge_details:
         total_right = sum(amount for side, *_rest, amount in bulge_details if side == "right")
@@ -298,9 +264,9 @@ def debug_pair(inside, outside, model, h: int, l: int) -> None:
             print(f"        {term}")
     print(f"[debug] per-bp stack contributions: {stack_dbg}")
     print(f"[debug] per-bp bulge contributions: {bulge_dbg}")
-    print(f"[debug] per-bp multi contributions: {multi_dbg}")
+    # print(f"[debug] per-bp multi contributions: {multi_dbg}")
     print(f"[debug] per-bp external contributions: {ext_dbg}")
-    print(f"[debug] per-bp inferred internal contributions: {residual}")
+    # print(f"[debug] per-bp inferred internal contributions: {residual}")
     print(f"[debug] bar_P per bp: {actual}")
 
 
@@ -336,6 +302,7 @@ def test_inside_outside_matches_vienna():
         "GCGGAAACCAGC",
         "GCGGGGAAAAACCCCAGC",
         "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
+        "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
         # "AUGGCUACGUAC",
         # "CCGAUAGCUAAG",
         # "GGCAAUCCGAUC",
@@ -347,9 +314,18 @@ def test_inside_outside_matches_vienna():
         print("ours:\n", pd.DataFrame(ours.bpp))
 
         print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
-        # print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
-        # print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
-        # print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
+        print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
+        print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
+        print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
+
+        # "test csv"
+        header = [f"b_{i}" for i in range(len(seq) + 1)]
+        pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)).to_csv(f"tests/bar_P_{seq}.csv", header=header)
+        pd.DataFrame(np.asarray(ours.outside.bar_Pm)).to_csv(f"tests/bar_Pm_{seq}.csv", header=header)
+        pd.DataFrame(np.asarray(ours.outside.bar_Pm1)).to_csv(f"tests/bar_Pm1_{seq}.csv", header=header)
+        pd.DataFrame(np.asarray(ours.outside.bar_M[1])).to_csv(f"tests/bar_M1_{seq}.csv", header=header)
+        pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
+
         # print("bar_P.shape:", ours.outside.bar_P.shape)
         seq_len = len(seq)
         print(
@@ -366,16 +342,16 @@ def test_inside_outside_matches_vienna():
         print(f"Max abs difference: {max_abs:.3e}")
         print(f"Mean abs difference: {mean_abs:.3e}")
 
-        # if max_abs > 1e-3:
-        #     # 上から 3 つやる
-        #     for _ in range(3):
-        #         idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
-        #         h, l = idx
-        #         if h < l:
-        #             print(f"[debug] inspecting pair ({h},{l}) with diff {diff[idx]:.3e}")
-        #             debug_pair(ours.inside, ours.outside, model, h, l)
+        if max_abs > 1e-3:
+            # 上から 3 つやる
+            for _ in range(3):
+                idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+                h, l = idx
+                if h < l:
+                    print(f"[debug] inspecting pair ({h},{l}) with diff {diff[idx]:.3e}")
+                    debug_pair(ours.inside, ours.outside, model, h, l)
 
-        #         diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
+                diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
         # assert max_abs < 1e-6
         # assert mean_abs < 1e-7
 
