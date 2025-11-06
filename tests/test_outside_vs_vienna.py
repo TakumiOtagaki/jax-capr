@@ -310,8 +310,12 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
     md = RNA.md()
     md.uniq_ML = 1
     md.dangles = 0
+    md.noLP = False
+
     # md.sfact = 0.0 # これであってるか...??
     fc = RNA.fold_compound(seq, md)
+    _, mfe_energy = fc.mfe()
+    fc.exp_params_rescale(mfe_energy)
     fc.pf()
     bpp = fc.bpp()
     n = len(seq)
