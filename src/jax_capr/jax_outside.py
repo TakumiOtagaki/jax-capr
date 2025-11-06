@@ -298,8 +298,8 @@ def _construct_outside_partition_fn(
                 return jnp.where(
                     cond_22_23_32,
                     bar_P[bp_idx_ij, i, j]
-                    * padded_p_seq[i, bi]
-                    * padded_p_seq[j, bj]
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[l, bl]
                     * em.en_internal(bi, bj, bh, bl, bip1, bjm1, bhm1, blp1, lup, rup)
                     * padded_p_seq[h - 1, bhm1]
                     * padded_p_seq[l + 1, blp1]
@@ -650,16 +650,7 @@ def _construct_outside_partition_fn(
         def fill_tables_by_step(carry, d):
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
-            bar_P = fill_bar_P(
-                d,
-                padded_p_seq,
-                ML,
-                E,
-                bar_P,
-                bar_Pm,
-                bar_Pm1,
-                bar_E,
-                s_table,
+            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_E, s_table,
             )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
