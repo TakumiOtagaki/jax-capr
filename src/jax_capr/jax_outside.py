@@ -346,8 +346,6 @@ def _construct_outside_partition_fn(
             ML: Array,
             E: Array,
             bar_P: Array,
-            bar_Pm: Array,
-            bar_Pm1: Array,
             bar_M: Array,
             bar_E: Array,
             s_table: Array,
@@ -516,109 +514,6 @@ def _construct_outside_partition_fn(
         bar_M = bar_M.at[2, h_indices, l_indices].set(updates[2], mode="drop")
         return bar_M
 
-    def fill_bar_Pm(
-        d: int,
-        padded_p_seq: Array,
-        ML: Array,
-        bar_P: Array,
-        bar_Pm: Array,
-        s_table: Array,
-    ) -> Array:
-        r"""
-        Pm[i, l] = \sum_{j} (l < j) s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j] * ML[1, l+1, j-1]
-        を同じ対角線上の i,l 全てについて計算する: l - i = d
-        """
-
-        def accumulate_single_i(i):
-            l = i + d
-
-            def accumulate_single_j(j):
-                cond_j = (l < j) & (j < seq_len + 1)
-
-                def valid_branch(_):
-                    ml_val = ML[1, l + 1, j - 1]
-
-                    def accumulate_bp(bp_idx):
-                        bp_ij = bp_bases[bp_idx]
-                        bi = bp_ij[0]
-                        bj = bp_ij[1]
-                        branch_penalty = em.en_multi_branch(bi, bj)
-                        return (
-                            s_table[1]
-                            * bar_P[bp_idx, i, j]
-                            * branch_penalty
-                            * padded_p_seq[i, bi]
-                            * padded_p_seq[j, bj]
-                            * ml_val
-                        )
-
-                    return jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
-
-                return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
-
-            j_indices = jnp.arange(seq_len + 1)
-            return jnp.sum(vmap(accumulate_single_j)(j_indices))
-
-        i_indices = jnp.arange(seq_len + 1)
-        l_indices = i_indices + d
-        updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm = bar_Pm.at[i_indices, l_indices].set(updates, mode="drop")
-        return bar_Pm
-
-    def fill_bar_Pm1(
-        d: int,
-        padded_p_seq: Array,
-        bar_P: Array,
-        bar_Pm1: Array,
-        s_table: Array,
-    ) -> Array:
-        r"""
-        Pm1[i, l] = \sum_{j} (l < j) s_table[j-l] * em.en_multi_unpaired()**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
-        を同じ対角線上の i,l 全てについて計算する: l - i = d
-        """
-
-
-        def accumulate_single_i(i):
-            l = i + d
-
-            def accumulate_single_j(j):
-                cond_j = (1 < j - l - 1) & (j < seq_len + 1) # 1 < j-l となっていたのを 修正
-
-                def valid_branch(_):
-                    gap = j - l - 1
-                    unpaired_factor = lax.pow(
-                        em.en_multi_unpaired(),
-                        jnp.asarray(gap, dtype=bar_P.dtype),
-                    ) * s_table[j - l]
-
-                    def accumulate_bp(bp_idx_ij):
-                        bp = bp_bases[bp_idx_ij]
-                        bi = bp[0]
-                        bj = bp[1]
-                        branch_penalty = em.en_multi_branch(bi, bj)
-                        return (
-                            bar_P[bp_idx_ij, i, j]
-                            * branch_penalty
-                            * padded_p_seq[i, bi]
-                            * padded_p_seq[j, bj]
-                            * unpaired_factor
-                        )
-
-                    inner_sum = jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
-                    return inner_sum
-
-                return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
-
-            j_indices = jnp.arange(seq_len)
-            total = jnp.sum(vmap(accumulate_single_j)(j_indices))
-            return total
-
-        i_indices = jnp.arange(seq_len + 1)
-        l_indices = i_indices + d
-        updates = vmap(accumulate_single_i)(i_indices)
-        bar_Pm1 = bar_Pm1.at[i_indices, l_indices].set(updates, mode="drop")
-        return bar_Pm1
-
     def outside_partition(
         p_seq: Array,
         P: Array,
@@ -642,9 +537,9 @@ def _construct_outside_partition_fn(
         def fill_tables_by_step(carry, d):
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
-            bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
-            bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
-            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_M, bar_E, s_table)
+            # bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
+            # bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
+            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_M, bar_E, s_table)
             bar_M = fill_bar_M(d, bar_M, bar_P, P, padded_p_seq, s_table)
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
