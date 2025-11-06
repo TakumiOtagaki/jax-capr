@@ -371,7 +371,7 @@ def _construct_outside_partition_fn(
             return lax.cond(cond, stack_val, lambda _: 0.0, operand=None)
 
         def get_bp_h_multi_sm(h, l):
-
+            # TODO: おそらく bh, bl についての条件とか、それを引っ張ってくるパートがない。; padded_p_seq[h, bh] * padded_p_seq[l, bl] をかけておく。
             def get_multi_i_term(i):
                 cond = (i + 1 < h - 1) & (i >= 0)
 
@@ -409,7 +409,7 @@ def _construct_outside_partition_fn(
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
 
-                sm += get_bp_h_multi_sm(h, l) # for debugging 
+                sm += get_bp_h_multi_sm(h, l) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
 
                 # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
                 sm += (
