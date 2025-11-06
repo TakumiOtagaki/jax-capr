@@ -51,6 +51,8 @@ class OutsideComputation:
     bar_E: Array
     bar_P: Array
     bar_M: Array
+    bar_Pm: Array
+    bar_Pm1: Array
 
 
 @dataclass(slots=True)
@@ -70,7 +72,7 @@ def _construct_outside_partition_fn(
     *,
     max_loop: int = MAX_LOOP,
     checkpoint_every: int | None = 10,
-) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
+) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array, Array, Array]]:
     if checkpoint_every is None:
         scan = lax.scan
     else:
@@ -407,7 +409,7 @@ def _construct_outside_partition_fn(
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
 
-                sm += get_bp_h_multi_sm(h, l)
+                # sm += get_bp_h_multi_sm(h, l) # for debugging 
 
                 # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
                 sm += (
@@ -631,7 +633,7 @@ def _construct_outside_partition_fn(
         ML: Array,
         E: Array,
         s_table: Array,
-    ) -> tuple[Array, Array, Array]:
+    ) -> tuple[Array, Array, Array, Array, Array]:
         seq_len = int(p_seq.shape[0])
         bar_E = jnp.zeros_like(E)
         bar_E = bar_E.at[0].set(1.0)
@@ -670,7 +672,7 @@ def _construct_outside_partition_fn(
             (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
             jnp.arange(seq_len - 1, 0, -1),
         )
-        return (bar_P, bar_M, bar_E)
+        return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1)
 
     return outside_partition
 
@@ -681,7 +683,7 @@ def get_outside_partition_fn(
     *,
     max_loop: int = MAX_LOOP,
     checkpoint_every: int | None = 10,
-) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
+) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array, Array, Array]]:
     """Return a cached outside kernel specialized to a given sequence length."""
 
     key = (int(id(em)), seq_len, max_loop, checkpoint_every)
@@ -722,7 +724,7 @@ def compute_outside(
         max_loop=max_loop,
         checkpoint_every=checkpoint_every,
     )
-    bar_P, bar_M, bar_E = outside_partition(
+    bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = outside_partition(
         inside.p_seq,
         inside.P,
         inside.ML,
@@ -734,4 +736,6 @@ def compute_outside(
         bar_E=bar_E,
         bar_P=bar_P,
         bar_M=bar_M,
+        bar_Pm=bar_Pm,
+        bar_Pm1=bar_Pm1,
     )
