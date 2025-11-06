@@ -26,6 +26,8 @@ Array = jnp.ndarray
 CacheKey = Tuple[int, int, int, int | None]
 _OUTSIDE_KERNEL_CACHE: Dict[CacheKey, Tuple[Callable, weakref.ReferenceType[energy.Model]]] = {}
 
+_OUTSIDE_KERNEL_CACHE.clear()
+
 
 def _as_int(x: Array) -> Array:
     """Convert tracer-friendly scalar to int32 for indexing."""
@@ -343,25 +345,24 @@ def _construct_outside_partition_fn(
         ) -> Array:
         """Propagate paired-state outside weights for span starting at i."""
 
-        def get_bp_stack(bp_idx_ij, l, bh, bl):
-            h = l - d
+        def get_bp_stack(bp_idx_ij, h, l, bh, bl):
             i = h - 1
             j = l + 1
             cond = (0 <= i) & (j <= seq_len)
             bp = bp_bases[bp_idx_ij]
             bi = bp[0]
             bj = bp[1]
-            return jnp.where(
-                cond,
-                bar_P[bp_idx_ij, i, j]
-                * padded_p_seq[i, bi]
-                * padded_p_seq[j, bj]
-                * em.en_stack(bi, bj, bh, bl),
-                0.0,
-            )
+            def stack_val(_):
+                return (
+                    bar_P[bp_idx_ij, i, j]
+                    * padded_p_seq[i, bi]
+                    * padded_p_seq[j, bj]
+                    * em.en_stack(bi, bj, bh, bl)
+                )
 
-        def get_bp_l_multi_sm(l):
-            h = l - d
+            return lax.cond(cond, stack_val, lambda _: 0.0, operand=None)
+
+        def get_bp_h_multi_sm(h, l):
 
             def get_multi_i_term(i):
                 cond = i + 1 < h - 1
@@ -383,33 +384,43 @@ def _construct_outside_partition_fn(
             all_i_terms = vmap(get_multi_i_term)(jnp.arange(seq_len + 1))
             return jnp.sum(jnp.asarray(all_i_terms))
 
-        def get_bp_l_sm(bp_idx_hl, l):
-            h = l - d
+        def get_bp_h_sm(bp_idx_hl, h):
+            l = h + d
             bp = bp_bases[bp_idx_hl]
             bh = bp[0]
             bl = bp[1]
-            sm = jnp.zeros((), dtype=bar_P.dtype)
+            valid_idx = (h >= 0) & (l < seq_len)
 
-            sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
-            sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
+            def compute_sm(_):
+                sm = jnp.zeros((), dtype=bar_P.dtype)
 
-            stack_summands = vmap(get_bp_stack, (0, None, None, None))(jnp.arange(NBPS), l, bh, bl)
-            sm += jnp.sum(stack_summands) * s_table[2]
+                sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
+                sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
 
-            sm += get_bp_l_multi_sm(l)
+                stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
+                sm += jnp.sum(stack_summands) * s_table[2]
 
-            # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
-            sm += bar_E[h] * E[l + 1] * em.en_ext_branch(bh, bl) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
+                sm += get_bp_h_multi_sm(h, l)
 
-            cond_valid = (0 < h) & (l < seq_len)
-            return jnp.where(cond_valid, sm, 0.0)
+                # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
+                sm += (
+                    bar_E[h]
+                    * E[l + 1]
+                    * em.en_ext_branch(bh, bl)
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[l, bl]
+                )
 
-        get_bp_all_ls = vmap(vmap(get_bp_l_sm, (None, 0)), (0, None))
+                return jnp.where(valid_idx, sm, 0.0)
+            return lax.cond(valid_idx, compute_sm, lambda _: 0.0, operand=None)
 
-        all_bp_ls = get_bp_all_ls(jnp.arange(NBPS), jnp.arange(seq_len + 1))
+        def get_bp_all_hs(bp_idx):
+            return vmap(lambda h: get_bp_h_sm(bp_idx, h))(jnp.arange(seq_len + 1))
+
         h_indices = jnp.arange(seq_len + 1)
         l_indices = h_indices + d
-        updated_bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_ls, mode='drop')
+        all_bp_hs = vmap(get_bp_all_hs)(jnp.arange(NBPS))
+        updated_bar_P = bar_P.at[:, h_indices, l_indices].set(all_bp_hs, mode='drop')
 
         return updated_bar_P
 
@@ -650,7 +661,7 @@ def _construct_outside_partition_fn(
         (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(
             fill_tables_by_step,
             (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
-            jnp.arange(seq_len - 1, -1, 0),
+            jnp.arange(seq_len - 1, 0, -1),
         )
         return (bar_P, bar_M, bar_E)
 
