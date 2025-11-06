@@ -650,10 +650,9 @@ def _construct_outside_partition_fn(
         def fill_tables_by_step(carry, d):
             bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
 
-            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_E, s_table,
-            )
             bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
             bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
+            bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_Pm, bar_Pm1, bar_E, s_table)
             bar_M = fill_bar_M(d, bar_M, bar_P, P, padded_p_seq, s_table)
 
             return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
