@@ -82,10 +82,28 @@ def compute_inside_tables(
     )
 
 
-def compute_outside_tables(sequence: str | Array, model) -> OutsideTables:
+def compute_outside_tables(
+    sequence: str | Array,
+    model,
+    *,
+    max_loop: int | None = None,
+    scale: float | None = None,
+    checkpoint_every: int | None = 10,
+) -> OutsideTables:
     """Run the outside DP using inside tables as prerequisites."""
-    inside = compute_inside_tables(sequence, model)
-    outside = jax_outside.compute_outside(inside, model)
+    inside = compute_inside_tables(
+        sequence,
+        model,
+        max_loop=max_loop,
+        scale=scale,
+        checkpoint_every=checkpoint_every,
+    )
+    outside = jax_outside.compute_outside(
+        inside,
+        model,
+        max_loop=max_loop,
+        checkpoint_every=checkpoint_every,
+    )
     return OutsideTables(
         bar_E=outside.bar_E,
         bar_P=outside.bar_P,
@@ -110,10 +128,28 @@ def assemble_bpp_matrix(inside: InsideTables, outside: OutsideTables) -> Array:
     return bpp
 
 
-def compute_inside_outside(sequence: str | Array, model, checkpoint_every: int) -> InsideOutsideResult:
+def compute_inside_outside(
+    sequence: str | Array,
+    model,
+    *,
+    max_loop: int | None = None,
+    scale: float | None = None,
+    checkpoint_every: int | None = 10,
+) -> InsideOutsideResult:
     """Compute partition function and base-pair probabilities."""
-    inside = compute_inside_tables(sequence, model)
-    outside_raw = jax_outside.compute_outside(inside, model, checkpoint_every=checkpoint_every)
+    inside = compute_inside_tables(
+        sequence,
+        model,
+        max_loop=max_loop,
+        scale=scale,
+        checkpoint_every=checkpoint_every,
+    )
+    outside_raw = jax_outside.compute_outside(
+        inside,
+        model,
+        max_loop=max_loop,
+        checkpoint_every=checkpoint_every,
+    )
     outside = OutsideTables(
         bar_E=outside_raw.bar_E,
         bar_P=outside_raw.bar_P,
@@ -132,9 +168,22 @@ def compute_inside_outside(sequence: str | Array, model, checkpoint_every: int) 
     )
 
 
-def compute_bpp_matrix(sequence: str | Array, model) -> Array:
+def compute_bpp_matrix(
+    sequence: str | Array,
+    model,
+    *,
+    max_loop: int | None = None,
+    scale: float | None = None,
+    checkpoint_every: int | None = 10,
+) -> Array:
     """Convenience helper returning only the base-pair probability matrix."""
-    return compute_inside_outside(sequence, model).bpp
+    return compute_inside_outside(
+        sequence,
+        model,
+        max_loop=max_loop,
+        scale=scale,
+        checkpoint_every=checkpoint_every,
+    ).bpp
 
 
 __all__ = [

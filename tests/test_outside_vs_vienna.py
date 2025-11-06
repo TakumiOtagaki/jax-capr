@@ -297,26 +297,32 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     checkpoint_every = 1
-    # sequences = [
-    #     "GGGGAAAACCCC",
-    #     "GCGGAAACCAGC",
-    #     "GCGGGGAAAAACCCCAGC",
-    #     "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
-    #     "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
-    #     # "AUGGCUACGUAC",
-    #     # "CCGAUAGCUAAG",
-    #     # "GGCAAUCCGAUC",
-    # ]
-    seq_len = 30
-    num_seq = 30
+    scale = -0.0
     sequences = [
-        "".join(np.random.choice(list("AUGC"), size=seq_len)) for _ in range(num_seq)
+        "GGGGAAAACCCC",
+        "GCGGAAACCAGC",
+        "GCGGGGAAAAACCCCAGC",
+        # "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
+        # "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
+        # "AUGGCUACGUAC",
+        # "CCGAUAGCUAAG",
+        # "GGCAAUCCGAUC",
     ]
+    # seq_len = 12
+    # num_seq = 10
+    # sequences = [
+    #     "".join(np.random.choice(list("AUGC"), size=seq_len)) for _ in range(num_seq)
+    # ]
     results: list[tuple[str, float, float]] = []
     print("Testing inside-outside against ViennaRNA...")
     for seq in sequences:
         print(f"Sequence: {seq}")
-        ours = compute_inside_outside(seq, model, checkpoint_every)
+        ours = compute_inside_outside(
+            seq,
+            model,
+            checkpoint_every=checkpoint_every,
+            scale=scale,
+        )
         print("ours:\n", pd.DataFrame(ours.bpp))
 
         print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
