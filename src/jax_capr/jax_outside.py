@@ -356,15 +356,15 @@ def _construct_outside_partition_fn(
         def get_bp_stack(bp_idx_ij, h, l, bh, bl):
             i = h - 1
             j = l + 1
-            cond = (0 <= i) & (j <= seq_len)
+            cond = (0 <= i) & (j <= seq_len) & (j >= i + em.hairpin + 1)
             bp = bp_bases[bp_idx_ij]
             bi = bp[0]
             bj = bp[1]
             def stack_val(_):
                 return (
                     bar_P[bp_idx_ij, i, j]
-                    * padded_p_seq[i, bi]
-                    * padded_p_seq[j, bj]
+                    * padded_p_seq[h, bh]
+                    * padded_p_seq[j, bl]
                     * em.en_stack(bi, bj, bh, bl)
                 )
 
@@ -373,7 +373,7 @@ def _construct_outside_partition_fn(
         def get_bp_h_multi_sm(h, l):
 
             def get_multi_i_term(i):
-                cond = (i + 1 < h - 1) & (i > 0)
+                cond = (i + 1 < h - 1) & (i >= 0)
 
                 def compute(_):
                     ml_val = ML[1, i + 1, h - 1]
@@ -403,8 +403,8 @@ def _construct_outside_partition_fn(
             def compute_sm(_):
                 sm = jnp.zeros((), dtype=bar_P.dtype)
 
-                sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
-                sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
+                # sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
+                # sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
 
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
