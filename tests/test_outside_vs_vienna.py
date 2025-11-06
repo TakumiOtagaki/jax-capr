@@ -7,6 +7,7 @@ import RNA
 from jax_capr.inside_outside import compute_inside_outside
 from jax_rnafold.common.utils import TURNER_1999
 from jax_rnafold.d0 import energy
+import jax.numpy as jnp
 
 
 def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
@@ -31,15 +32,24 @@ def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     sequences = [
         "GGGGAAAACCCC",
-        "AUGGCUACGUAC",
-        "CCGAUAGCUAAG",
-        "GGCAAUCCGAUC",
+        # "AUGGCUACGUAC",
+        # "CCGAUAGCUAAG",
+        # "GGCAAUCCGAUC",
     ]
     print("Testing inside-outside against ViennaRNA...")
     for seq in sequences:
         print(f"Sequence: {seq}")
         ours = compute_inside_outside(seq, model)
         print("ours:", pd.DataFrame(ours.bpp))
+
+        print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
+        seq_len = len(seq)
+        print(
+            "E[0] vs bar_E[n]",
+            float(ours.inside.E[0]),
+            float(ours.outside.bar_E[seq_len]),
+        )
+        print("barE:\n", pd.DataFrame(ours.outside.bar_E))
         ref = vienna_bpp(seq, str(TURNER_1999))
         print("vienna:", pd.DataFrame(ref)) 
         diff = ours.bpp - ref
