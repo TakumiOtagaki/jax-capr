@@ -466,14 +466,14 @@ def _construct_outside_partition_fn(
 
             def get_bp_idx_hm1_lp1_term(bp_idx_hm1_lp1):
                 bp_hm1_lp1 = bp_bases[bp_idx_hm1_lp1]
-                hm1 = bp_hm1_lp1[0]
-                lp1 = bp_hm1_lp1[1]
+                bhm1 = bp_hm1_lp1[0]
+                blp1 = bp_hm1_lp1[1]
                 return (
                     s_table[2]
                     * bar_P[bp_idx_hm1_lp1, h - 1, l + 1]
-                    * padded_p_seq[h - 1, hm1]
-                    * padded_p_seq[l + 1, lp1]
-                    * em.en_multi_closing(hm1, lp1)
+                    * padded_p_seq[h - 1, bhm1]
+                    * padded_p_seq[l + 1, blp1]
+                    * em.en_multi_closing(bhm1, blp1)
                 )
 
             get_all_bp_terms = vmap(get_bp_idx_hm1_lp1_term)
