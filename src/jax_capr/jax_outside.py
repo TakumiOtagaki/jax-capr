@@ -403,8 +403,8 @@ def _construct_outside_partition_fn(
             def compute_sm(_):
                 sm = jnp.zeros((), dtype=bar_P.dtype)
 
-                # sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
-                # sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
+                sm += psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table)
+                sm += psum_outer_internal_loops(bp_idx_hl, h, l, padded_p_seq, bar_P, s_table)
 
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
