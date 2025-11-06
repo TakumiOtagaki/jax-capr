@@ -43,17 +43,17 @@ def test_inside_outside_matches_vienna():
         print("ours:", pd.DataFrame(ours.bpp))
 
         print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
-        print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
-        print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
-        print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
-        print("bar_P.shape:", ours.outside.bar_P.shape)
+        # print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
+        # print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
+        # print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
+        # print("bar_P.shape:", ours.outside.bar_P.shape)
         seq_len = len(seq)
         print(
             "E[0] vs bar_E[n]",
             float(ours.inside.E[0]),
             float(ours.outside.bar_E[seq_len]),
         )
-        print("barE:\n", pd.DataFrame(ours.outside.bar_E))
+        # print("barE:\n", pd.DataFrame(ours.outside.bar_E))
         ref = vienna_bpp(seq, str(TURNER_1999))
         print("vienna:", pd.DataFrame(ref)) 
         diff = ours.bpp - ref
