@@ -382,9 +382,8 @@ def _construct_outside_partition_fn(
                         + bar_Pm[i, l]
                         * (
                             s_table[1] * ml_val
-                            + lax.pow(em.en_multi_unpaired(), (h - i - 1))
+                            + s_table[h - i] * lax.pow(em.en_multi_unpaired(), (h - i - 1))
                         )
-                        * s_table[h - i]
                     )
                     return multi_branch
 
@@ -580,11 +579,10 @@ def _construct_outside_partition_fn(
         s_table: Array,
     ) -> Array:
         r"""
-        Pm1[i, l] = \sum_{j} (l < j) (s_table[1] * em.en_multi_unpaired())**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
+        Pm1[i, l] = \sum_{j} (l < j) s_table[j-l] * em.en_multi_unpaired()**(j - l - 1) * s_table[1] * em.en_multi_branch(bi, bl) * bar_P[i, j]
         を同じ対角線上の i,l 全てについて計算する: l - i = d
         """
 
-        base_multi_unpaired = s_table[1] * em.en_multi_unpaired()
 
         def accumulate_single_i(i):
             l = i + d
@@ -595,7 +593,7 @@ def _construct_outside_partition_fn(
                 def valid_branch(_):
                     gap = j - l - 1
                     unpaired_factor = lax.pow(
-                        base_multi_unpaired,
+                        em.en_multi_unpaired(),
                         jnp.asarray(gap, dtype=bar_P.dtype),
                     ) * s_table[j - l]
 
