@@ -251,7 +251,7 @@ def debug_pair(inside, outside, model, h: int, l: int) -> None:
     # print(f"[debug] pair ({h},{l}) multi sum={total_multi:.6e}, multi/actual ratio={multi_ratio:.6e}")
     print(f"[debug] pair ({h},{l}) external sum={total_ext:.6e}, external/actual ratio={ext_ratio:.6e}")
     # residual = actual - stack_dbg - bulge_dbg - multi_dbg - ext_dbg
-    print(f"[debug] pair ({h},{l}) inferred internal sum={float(residual.sum()):.6e}")
+    # print(f"[debug] pair ({h},{l}) inferred internal sum={float(residual.sum()):.6e}")
     if bulge_details:
         total_right = sum(amount for side, *_rest, amount in bulge_details if side == "right")
         total_left = sum(amount for side, *_rest, amount in bulge_details if side == "left")
@@ -297,16 +297,22 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     checkpoint_every = 1
+    # sequences = [
+    #     "GGGGAAAACCCC",
+    #     "GCGGAAACCAGC",
+    #     "GCGGGGAAAAACCCCAGC",
+    #     "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
+    #     "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
+    #     # "AUGGCUACGUAC",
+    #     # "CCGAUAGCUAAG",
+    #     # "GGCAAUCCGAUC",
+    # ]
+    seq_len = 30
+    num_seq = 30
     sequences = [
-        "GGGGAAAACCCC",
-        "GCGGAAACCAGC",
-        "GCGGGGAAAAACCCCAGC",
-        "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
-        "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
-        # "AUGGCUACGUAC",
-        # "CCGAUAGCUAAG",
-        # "GGCAAUCCGAUC",
+        "".join(np.random.choice(list("AUGC"), size=seq_len)) for _ in range(num_seq)
     ]
+    results: list[tuple[str, float, float]] = []
     print("Testing inside-outside against ViennaRNA...")
     for seq in sequences:
         print(f"Sequence: {seq}")
@@ -314,17 +320,17 @@ def test_inside_outside_matches_vienna():
         print("ours:\n", pd.DataFrame(ours.bpp))
 
         print("bar_P:\n", pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)))
-        print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
-        print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
+        # print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
+        # print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
         print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
 
         # "test csv"
-        header = [f"b_{i}" for i in range(len(seq) + 1)]
-        pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)).to_csv(f"tests/bar_P_{seq}.csv", header=header)
-        pd.DataFrame(np.asarray(ours.outside.bar_Pm)).to_csv(f"tests/bar_Pm_{seq}.csv", header=header)
-        pd.DataFrame(np.asarray(ours.outside.bar_Pm1)).to_csv(f"tests/bar_Pm1_{seq}.csv", header=header)
-        pd.DataFrame(np.asarray(ours.outside.bar_M[1])).to_csv(f"tests/bar_M1_{seq}.csv", header=header)
-        pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
+        # header = [f"b_{i}" for i in range(len(seq) + 1)]
+        # pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)).to_csv(f"tests/bar_P_{seq}.csv", header=header)
+        # pd.DataFrame(np.asarray(ours.outside.bar_Pm)).to_csv(f"tests/bar_Pm_{seq}.csv", header=header)
+        # pd.DataFrame(np.asarray(ours.outside.bar_Pm1)).to_csv(f"tests/bar_Pm1_{seq}.csv", header=header)
+        # pd.DataFrame(np.asarray(ours.outside.bar_M[1])).to_csv(f"tests/bar_M1_{seq}.csv", header=header)
+        # pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
 
         # print("bar_P.shape:", ours.outside.bar_P.shape)
         seq_len = len(seq)
@@ -339,21 +345,36 @@ def test_inside_outside_matches_vienna():
         diff = ours.bpp - ref
         max_abs = np.max(np.abs(diff))
         mean_abs = np.mean(np.abs(diff))
+        results.append((seq, float(max_abs), float(mean_abs)))
         print(f"Max abs difference: {max_abs:.3e}")
         print(f"Mean abs difference: {mean_abs:.3e}")
 
-        if max_abs > 1e-3:
-            # 上から 3 つやる
-            for _ in range(3):
-                idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
-                h, l = idx
-                if h < l:
-                    print(f"[debug] inspecting pair ({h},{l}) with diff {diff[idx]:.3e}")
-                    debug_pair(ours.inside, ours.outside, model, h, l)
+        # if max_abs > 1e-3:
+        #     # 上から 3 つやる
+        #     for _ in range(3):
+        #         idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+        #         h, l = idx
+        #         if h < l:
+        #             print(f"[debug] inspecting pair ({h},{l}) with diff {diff[idx]:.3e}")
+        #             debug_pair(ours.inside, ours.outside, model, h, l)
 
-                diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
+        #         diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
         # assert max_abs < 1e-6
         # assert mean_abs < 1e-7
+
+    print("Summary of differences:")
+    for seq, max_abs, mean_abs in results:
+        print(f"Sequence: {seq}")
+        print(f"  Max abs difference: {max_abs:.3e}")
+        print(f"  Mean abs difference: {mean_abs:.3e}")
+
+    # 0th, 25th percentile, median, 75th percentile, max
+    percentiles = np.percentile([max_abs for _, max_abs, _ in results], [25, 50, 75])
+    print(f"  min: {min(max_abs for _, max_abs, _ in results):.3e}")
+    print(f"  25th percentile: {percentiles[0]:.3e}")
+    print(f"  Median: {percentiles[1]:.3e}")
+    print(f"  75th percentile: {percentiles[2]:.3e}")
+    print(f"  max: {max(max_abs for _, max_abs, _ in results):.3e}")
 
 def main():
     test_inside_outside_matches_vienna()
