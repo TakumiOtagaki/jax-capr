@@ -542,7 +542,6 @@ def _construct_outside_partition_fn(
 
                 def valid_branch(_):
                     ml_val = ML[1, l + 1, j - 1]
-                    s1 = s_table[1]
 
                     def accumulate_bp(bp_idx):
                         bp_ij = bp_bases[bp_idx]
@@ -550,7 +549,7 @@ def _construct_outside_partition_fn(
                         bj = bp_ij[1]
                         branch_penalty = em.en_multi_branch(bi, bj)
                         return (
-                            s1
+                            s_table[1]
                             * bar_P[bp_idx, i, j]
                             * branch_penalty
                             * padded_p_seq[i, bi]
@@ -611,7 +610,7 @@ def _construct_outside_partition_fn(
                         )
 
                     inner_sum = jnp.sum(vmap(accumulate_bp)(jnp.arange(NBPS)))
-                    return s_table[1] * inner_sum
+                    return inner_sum
 
                 return lax.cond(cond_j, valid_branch, lambda _: 0.0, operand=None)
 
