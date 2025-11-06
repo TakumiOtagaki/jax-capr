@@ -356,7 +356,7 @@ def _construct_outside_partition_fn(
         def get_bp_stack(bp_idx_ij, h, l, bh, bl):
             i = h - 1
             j = l + 1
-            cond = (0 <= i) & (j <= seq_len) & (j >= i + em.hairpin + 1)
+            cond = (0 <= i) & (j <= seq_len)
             bp = bp_bases[bp_idx_ij]
             bi = bp[0]
             bj = bp[1]
@@ -398,7 +398,7 @@ def _construct_outside_partition_fn(
             bp = bp_bases[bp_idx_hl]
             bh = bp[0]
             bl = bp[1]
-            valid_idx = (h >= 0) & (l < seq_len)
+            valid_idx = (h >= 0) & (l < seq_len) & (em.hairpin <= l - h - 1)
 
             def compute_sm(_):
                 sm = jnp.zeros((), dtype=bar_P.dtype)
@@ -409,7 +409,7 @@ def _construct_outside_partition_fn(
                 stack_summands = vmap(get_bp_stack, (0, None, None, None, None))(jnp.arange(NBPS), h, l, bh, bl)
                 sm += jnp.sum(stack_summands) * s_table[2]
 
-                # sm += get_bp_h_multi_sm(h, l) # for debugging 
+                sm += get_bp_h_multi_sm(h, l) # for debugging 
 
                 # TODO: 以下の式で padded_p_seq[h, bh] * padded_p_seq[l, bl] を残すのかどうか検討
                 sm += (
