@@ -308,6 +308,7 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
     RNA.params_load_RNA_Turner1999()
     # RNA.params_load_RNA_Turner2004()
     md = RNA.md()
+    md.uniq_ML = 1
     md.dangles = 0
     # md.sfact = 0.0 # これであってるか...??
     fc = RNA.fold_compound(seq, md)
