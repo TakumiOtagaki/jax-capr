@@ -110,10 +110,10 @@ def assemble_bpp_matrix(inside: InsideTables, outside: OutsideTables) -> Array:
     return bpp
 
 
-def compute_inside_outside(sequence: str | Array, model) -> InsideOutsideResult:
+def compute_inside_outside(sequence: str | Array, model, checkpoint_every: int) -> InsideOutsideResult:
     """Compute partition function and base-pair probabilities."""
     inside = compute_inside_tables(sequence, model)
-    outside_raw = jax_outside.compute_outside(inside, model)
+    outside_raw = jax_outside.compute_outside(inside, model, checkpoint_every=checkpoint_every)
     outside = OutsideTables(
         bar_E=outside_raw.bar_E,
         bar_P=outside_raw.bar_P,

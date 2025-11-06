@@ -80,7 +80,7 @@ def _construct_outside_partition_fn(
 
     two_loop_length = min(seq_len, max_loop)
 
-    # @jit
+    @jit
     def fill_bar_E(bar_E, P, padded_p_seq, s_table):
         def body(current_bar_E, i):
             def get_j_bp_term(j, bp_idx):
@@ -104,7 +104,7 @@ def _construct_outside_partition_fn(
         bar_xi_out, _ = scan(body, bar_E, jnp.arange(1, seq_len + 1))
         return bar_xi_out
 
-    # @jit
+    @jit
     def psum_outer_bulges(bh, bl, h, l, padded_p_seq, bar_P, s_table):
         def get_bp_ij(bp_idx_ij, ij_offset):
             bp = bp_bases[bp_idx_ij]
@@ -158,7 +158,7 @@ def _construct_outside_partition_fn(
         all_bp_sms = vmap(get_bp_all_ij)(jnp.arange(NBPS))
         return jnp.sum(all_bp_sms)
 
-    # @jit
+    @jit
     def psum_outer_internal_loops(
         bp_idx_hl: int,
         h: int,
@@ -207,7 +207,7 @@ def _construct_outside_partition_fn(
             operand=None,
         )
 
-        # @jit
+        @jit
         def get_bp_idx_ij_hoff_loff_term(bp_idx_ij, lup_offset, rup_offset):
             lup = lup_offset + 1
             rup = rup_offset + 1
