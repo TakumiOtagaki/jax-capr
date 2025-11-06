@@ -233,10 +233,10 @@ def _construct_outside_partition_fn(
 
             sm = 0.0
 
-            # @jit
+            @jit
             def get_bp_1n_sm(bip1, bjm1):
                 bp_1n_sm = 0.0
-                cond_11 = (lup == 1) | (rup == 1)
+                cond_11 = (lup == 1) & (rup == 1)
 
                 pr_ij_mm = padded_p_seq[i + 1, bip1] * padded_p_seq[j - 1, bjm1]
                 bp_1n_sm += jnp.where(
