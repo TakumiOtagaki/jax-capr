@@ -465,8 +465,8 @@ def _construct_outside_partition_fn(
                 return (
                     s_table[2]
                     * bar_P[bp_idx_hm1_lp1, h - 1, l + 1]
-                    # * padded_p_seq[h - 1, bhm1]
-                    # * padded_p_seq[l + 1, blp1]
+                    * padded_p_seq[h - 1, bhm1]
+                    * padded_p_seq[l + 1, blp1]
                     * em.en_multi_closing(bhm1, blp1)
                 )
 
