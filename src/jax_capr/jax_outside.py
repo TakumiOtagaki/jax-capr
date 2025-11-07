@@ -176,7 +176,7 @@ def _construct_outside_partition_fn(
         ネスト順序: (lup, rup) -> (bp_idx_ij) -> (bip1, bjm1)
         """
 
-        max_lup_rup = two_loop_length - 2
+        max_lup_rup = two_loop_length
         lup_offsets = jnp.arange(max_lup_rup)
         rup_offsets = jnp.arange(max_lup_rup)
 
@@ -214,7 +214,7 @@ def _construct_outside_partition_fn(
             i = h - lup - 1
             j = l + rup + 1
             ij_cond = (j < seq_len + 1) & (0 <= i)
-            len_cond = (lup + rup + 2 <= two_loop_length)
+            len_cond = (h - i - 1 + j - l - 1 <= two_loop_length)
             valid_ij = ij_cond & len_cond
 
             bp = bp_bases[bp_idx_ij]
@@ -383,7 +383,8 @@ def _construct_outside_partition_fn(
                     multi_branch = (
                         ML[1, l + 1, j] * bar_M[2, h, j] \
                         + ML[0, l + 1, j] * (bar_M[0, h, j] + bar_M[1, h, j])
-                    ) * em.en_multi_branch(bh, bl) * padded_p_seq[h, bh] * padded_p_seq[l, bl]
+                    ) * em.en_multi_branch(bh, bl) * padded_p_seq[h, bh] * padded_p_seq[l, bl] \
+                    # * s_table[2]
                     return multi_branch
 
                 return lax.cond(cond, compute, lambda _: 0.0, operand=None)
