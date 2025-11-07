@@ -451,7 +451,7 @@ def _construct_outside_partition_fn(
             sm_M0 = 0.0
 
             l = h + d
-            cond = (l < seq_len + 1)
+            cond = (l < seq_len + 1) & (0 <= h - 1)
 
             multi_unpaired_factor = s_table[1] * em.en_multi_unpaired()
 
