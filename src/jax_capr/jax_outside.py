@@ -377,7 +377,7 @@ def _construct_outside_partition_fn(
             valid_idx = (h >= 0) & (l < seq_len) & (em.hairpin <= l - h - 1)
 
             def get_multi_j_term(j):
-                cond = (l <= j) & (j < seq_len + 1)
+                cond = (l + 1 <= j) & (j < seq_len + 1)
 
                 def compute(_):
                     multi_branch = (
