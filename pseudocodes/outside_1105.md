@@ -1,3 +1,6 @@
+outside P の計算のマルチループのところがめちゃくちゃ間違っていた、自動微分を考えたら普通にわかるのに、なんか囚われていた。
+
+
 
 ```math
 \begin{align}
@@ -11,21 +14,13 @@
 + \sum_{\substack{i, j \\ i < h, l < j \\ h - i - 1 + j - l - 1 \leq 30}}  
 \sum_{\text{bp_idx}_{i, j} ( = (b_i, b_j))} B(f_2(i, j, h, l)) \bar P'(\text{bp_idx}_{i, j}, i, j) s(h - i + j - l)  x_{i, b_i}  x_{j, b_j}\\
 
-& \quad + \sum_{\substack{i \\ i < h}} \left[
+& \quad + \sum_{\substack{j \\ l < j}} x_{h, b_h} x_{l, b_l} B(M_p(b_h, b_l)) \left[
 \begin{array}[l]
- & s(1)M'(1, i + 1, h - 1) \bar P'_{m1} (i,l)  \\
- + \left\{ s(1) M'(1, i + 1, h - 1)
- + s(h - i)B(M_u(h - i - 1)) \right\} \bar P'_{m} (i, l) 
+ & M'(1, l + 1, j) \bar M' (2, h, j) \\
+ + M'(0, l + 1, j) \bar M' (1, h, j) \\
+ + M'(0, l + 1, j) \bar M' (0, h, j)
 \end{array} 
 \right] \\
-
-\bar P'_m (i, l) & := \sum_{\substack{j \\ l < j}} s(1) M'(1, l+1, j-1) 
-\sum_{\text{bp_idx}_{i, j} ( = (b_i, b_j))} 
-B(M_p(b_i, b_j)) \bar P'(\text{bp_idx_ij}, i, j) x_{i, b_i} x_{j, b_j} \\
-
-\bar P'_{m1} (i, l) & := \sum_{\substack{j \\ l < j}} s(j - l) B(M_u (j - l - 1))
-\sum_{\text{bp_idx}_{i, j} ( = (b_i, b_j))}
-B(M_p(b_i, b_j)) \bar P'(\text{bp_idx_ij}, i, j) x_{i, b_i} x_{j, b_j} \\
 
 \bar M'(2, h, l) & := s(1) \bar M'(2, h-1, l) B(M_u) 
 + s(2) \sum_{\text{bp_idx}_{h-1, l+1} ( = (b_{h-1}, b_{l+1}))} 
@@ -45,5 +40,4 @@ P'(\text{bp_idx}_{i, h-1}, i, h-1) B(M_p(b_i, b_{h-1}))  x_{i, b_i} x_{h-1, b_{h
 \end{align}
 ```
 
-
-
+これが正しい。
