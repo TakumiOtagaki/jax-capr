@@ -297,7 +297,7 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
     checkpoint_every = 1
-    scale = -0.0
+    scale = -1.5
     sequences = [
         "GGGGAAAACCCC",
         "GCGGAAACCAGC",
