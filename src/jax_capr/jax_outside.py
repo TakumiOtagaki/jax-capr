@@ -214,7 +214,7 @@ def _construct_outside_partition_fn(
             i = h - lup - 1
             j = l + rup + 1
             ij_cond = (j < seq_len + 1) & (0 <= i)
-            len_cond = (h - i - 1 + j - l - 1 <= two_loop_length)
+            len_cond = (h - i - 1 + j - l - 1 <= two_loop_length) & (h - i - 1 > 0) & (j - l - 1 > 0)
             valid_ij = ij_cond & len_cond
 
             bp = bp_bases[bp_idx_ij]
@@ -377,7 +377,7 @@ def _construct_outside_partition_fn(
             valid_idx = (h >= 0) & (l < seq_len) & (em.hairpin <= l - h - 1)
 
             def get_multi_j_term(j):
-                cond = (l < j) & (j < seq_len + 1)
+                cond = (l <= j) & (j < seq_len + 1)
 
                 def compute(_):
                     multi_branch = (
