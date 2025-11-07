@@ -5,7 +5,7 @@ import pandas as pd
 import RNA
 
 from jax_capr.inside_outside import compute_inside_outside
-from jax_rnafold.common.utils import TURNER_1999
+from jax_rnafold.common.utils import TURNER_1999, TURNER_2004
 from jax_rnafold.common.utils import bp_bases, NBPS, MAX_LOOP
 from jax_rnafold.d0 import energy
 import jax.numpy as jnp
@@ -277,6 +277,7 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
     md.uniq_ML = 1
     md.dangles = 0
     md.noLP = False
+    md.temperature = 37.0
 
     # md.sfact = 0.0 # これであってるか...??
     fc = RNA.fold_compound(seq, md)
@@ -296,20 +297,25 @@ def vienna_bpp(seq: str, energy_mode: str) -> np.ndarray:
 
 def test_inside_outside_matches_vienna():
     model = energy.JaxNNModel(params_path=TURNER_1999)
+    # model = energy.JaxNNModel(params_path=TURNER_2004)
     checkpoint_every = 1
-    scale = -1.5
+    scale = -4.0
     sequences = [
-        "GGGGAAAACCCC",
-        "GCGGAAACCAGC",
-        "GCGGGGAAAAACCCCAGC",
+        # "CUUGGCGUAAGGGCUCAUCAGUCACUAUACAGAGCGCGACAUGUGACGCCGAGUCCUAGGGUCCCGCUUGCAUUC",
+        "AAUUUUCCCAGCAGUCCCCACUAUAGCUACCCAUACGGUACCAGGGGCAAACGUGAAAUUGCCCCGCGGGAGUAC", # 0.8
+        "AAUUUUCCCAGCAGUCCCCACUAUAGCUACCCAUACGGUACCAGGGGCAAACGUGAAAUUGCCCCAGCGGGAGUAC", # 
+        # "GGAUAGUACGAAUUUAGACUCUCACUUACCGCAGUAAGUUACCCUCGUCU",
+        # "GGGGAAAACCCC",
+        # "GCGGAAACCAGC",
+        # "GCGGGGAAAAACCCCAGC",
         # "GGGGAAAACCCCGGGGAAAACCCCGGGGAAAACCCC",
         # "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
         # "AUGGCUACGUAC",
         # "CCGAUAGCUAAG",
         # "GGCAAUCCGAUC",
     ]
-    # seq_len = 12
-    # num_seq = 10
+    # seq_len = 75
+    # num_seq = 20
     # sequences = [
     #     "".join(np.random.choice(list("AUGC"), size=seq_len)) for _ in range(num_seq)
     # ]
@@ -331,12 +337,10 @@ def test_inside_outside_matches_vienna():
         print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
 
         # "test csv"
-        # header = [f"b_{i}" for i in range(len(seq) + 1)]
+        header = [f"b_{i}" for i in range(len(seq) + 1)]
         # pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)).to_csv(f"tests/bar_P_{seq}.csv", header=header)
-        # pd.DataFrame(np.asarray(ours.outside.bar_Pm)).to_csv(f"tests/bar_Pm_{seq}.csv", header=header)
-        # pd.DataFrame(np.asarray(ours.outside.bar_Pm1)).to_csv(f"tests/bar_Pm1_{seq}.csv", header=header)
         # pd.DataFrame(np.asarray(ours.outside.bar_M[1])).to_csv(f"tests/bar_M1_{seq}.csv", header=header)
-        # pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
+        pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
 
         # print("bar_P.shape:", ours.outside.bar_P.shape)
         seq_len = len(seq)
@@ -346,8 +350,9 @@ def test_inside_outside_matches_vienna():
             float(ours.outside.bar_E[seq_len]),
         )
         # print("barE:\n", pd.DataFrame(ours.outside.bar_E))
-        ref = vienna_bpp(seq, str(TURNER_1999))
-        print("vienna:", pd.DataFrame(ref)) 
+        ref = vienna_bpp(seq, str(TURNER_2004))
+        print("vienna:", pd.DataFrame(ref))
+        pd.DataFrame(ref).to_csv(f"tests/viennabpp_{seq}.csv", header=header[:-1])
         diff = ours.bpp - ref
         max_abs = np.max(np.abs(diff))
         mean_abs = np.mean(np.abs(diff))
@@ -355,16 +360,17 @@ def test_inside_outside_matches_vienna():
         print(f"Max abs difference: {max_abs:.3e}")
         print(f"Mean abs difference: {mean_abs:.3e}")
 
-        # if max_abs > 1e-3:
-        #     # 上から 3 つやる
-        #     for _ in range(3):
-        #         idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
-        #         h, l = idx
-        #         if h < l:
-        #             print(f"[debug] inspecting pair ({h},{l}) with diff {diff[idx]:.3e}")
+        if max_abs > 1e-3:
+            # 上から 3 つやる
+            for _ in range(3):
+                idx = np.unravel_index(np.argmax(np.abs(diff)), diff.shape)
+                h, l = idx
+                if h < l:
+                    print(f"[debug] inspecting pair ({h}({seq[h]}),{l}({seq[l]})) with diff {diff[idx]:.3e}")
+                    print(f"  ours.bpp[{h},{l}] = {ours.bpp[h,l]:.6e}, vienna = {ref[h,l]:.6e}")
         #             debug_pair(ours.inside, ours.outside, model, h, l)
 
-        #         diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
+                diff = diff.at[idx].set(0)  # もう一度同じところを取らないようにする
         # assert max_abs < 1e-6
         # assert mean_abs < 1e-7
 
