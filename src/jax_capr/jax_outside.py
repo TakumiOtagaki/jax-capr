@@ -527,6 +527,8 @@ def _construct_outside_partition_fn(
         bar_E = bar_E.at[0].set(1.0)
         bar_P = jnp.zeros_like(P)
         bar_M = jnp.zeros_like(ML)
+        # bar_M[:, i, i] = 1.0 for i in range(seq_len + 1)
+        # bar_M = bar_M.at[:, jnp.arange(seq_len + 1), jnp.arange(seq_len + 1)].set(1.0)
         bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
         bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
 
