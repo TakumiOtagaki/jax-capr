@@ -301,7 +301,7 @@ def test_inside_outside_matches_vienna():
     checkpoint_every = 1
     scale = -4.0
     sequences = [
-        # "CUUGGCGUAAGGGCUCAUCAGUCACUAUACAGAGCGCGACAUGUGACGCCGAGUCCUAGGGUCCCGCUUGCAUUC",
+        "CUUGGCGUAAGGGCUCAUCAGUCACUAUACAGAGCGCGACAUGUGACGCCGAGUCCUAGGGUCCCGCUUGCAUUC",
         "AAUUUUCCCAGCAGUCCCCACUAUAGCUACCCAUACGGUACCAGGGGCAAACGUGAAAUUGCCCCGCGGGAGUAC", # 0.8
         "AAUUUUCCCAGCAGUCCCCACUAUAGCUACCCAUACGGUACCAGGGGCAAACGUGAAAUUGCCCCAGCGGGAGUAC", # 
         # "GGAUAGUACGAAUUUAGACUCUCACUUACCGCAGUAAGUUACCCUCGUCU",
@@ -312,10 +312,10 @@ def test_inside_outside_matches_vienna():
         # "GGCGGAAAGCGAAACGCAAAACGGCAAAAGCCGAAACCGCC"
         # "AUGGCUACGUAC",
         # "CCGAUAGCUAAG",
-        # "GGCAAUCCGAUC",
-    ]
-    # seq_len = 75
-    # num_seq = 20
+        # "GGCAAUCCGAUC", 
+        ]
+    # seq_len = 100
+    # num_seq = 10
     # sequences = [
     #     "".join(np.random.choice(list("AUGC"), size=seq_len)) for _ in range(num_seq)
     # ]
@@ -335,12 +335,14 @@ def test_inside_outside_matches_vienna():
         # print("bar_Pm:", pd.DataFrame(np.asarray(ours.outside.bar_Pm)))
         # print("bar_Pm1:", pd.DataFrame(np.asarray(ours.outside.bar_Pm1)))
         print("bar_M[1]:\n", pd.DataFrame(np.asarray(ours.outside.bar_M[1])))
+        print("ML[:, 65, 64]:\n", pd.DataFrame(np.asarray(ours.inside.ML[:, 65, 64])))
+        print("ML[:, 65, 65]:\n", pd.DataFrame(np.asarray(ours.inside.ML[:, 65, 65])))
 
         # "test csv"
         header = [f"b_{i}" for i in range(len(seq) + 1)]
         # pd.DataFrame(jnp.sum(ours.outside.bar_P, axis=0)).to_csv(f"tests/bar_P_{seq}.csv", header=header)
         # pd.DataFrame(np.asarray(ours.outside.bar_M[1])).to_csv(f"tests/bar_M1_{seq}.csv", header=header)
-        pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
+        # pd.DataFrame(ours.bpp).to_csv(f"tests/bpp_{seq}.csv", header=header[:-1])
 
         # print("bar_P.shape:", ours.outside.bar_P.shape)
         seq_len = len(seq)
@@ -352,7 +354,7 @@ def test_inside_outside_matches_vienna():
         # print("barE:\n", pd.DataFrame(ours.outside.bar_E))
         ref = vienna_bpp(seq, str(TURNER_2004))
         print("vienna:", pd.DataFrame(ref))
-        pd.DataFrame(ref).to_csv(f"tests/viennabpp_{seq}.csv", header=header[:-1])
+        # pd.DataFrame(ref).to_csv(f"tests/viennabpp_{seq}.csv", header=header[:-1])
         diff = ours.bpp - ref
         max_abs = np.max(np.abs(diff))
         mean_abs = np.mean(np.abs(diff))
@@ -383,9 +385,9 @@ def test_inside_outside_matches_vienna():
     # 0th, 25th percentile, median, 75th percentile, max
     percentiles = np.percentile([max_abs for _, max_abs, _ in results], [25, 50, 75])
     print(f"  min: {min(max_abs for _, max_abs, _ in results):.3e}")
-    print(f"  25th percentile: {percentiles[0]:.3e}")
-    print(f"  Median: {percentiles[1]:.3e}")
-    print(f"  75th percentile: {percentiles[2]:.3e}")
+    # print(f"  25th percentile: {percentiles[0]:.3e}")
+    # print(f"  Median: {percentiles[1]:.3e}")
+    # print(f"  75th percentile: {percentiles[2]:.3e}")
     print(f"  max: {max(max_abs for _, max_abs, _ in results):.3e}")
 
 def main():
