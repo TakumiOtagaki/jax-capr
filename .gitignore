@@ -4,3 +4,4 @@ venv
 __pycache__
 jax_capr.egg-info
 .pytest_cache
+.DS_Store
