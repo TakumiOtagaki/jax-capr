@@ -9,6 +9,7 @@ from . import jax_inside
 from . import jax_outside
 
 import jax.numpy as jnp
+from jax_rnafold.common.utils import bp_bases
 
 
 Array = jnp.ndarray
@@ -122,9 +123,18 @@ def assemble_bpp_matrix(inside: InsideTables, outside: OutsideTables) -> Array:
     # Only retain real sequence positions before combining inside/outside terms.
     inside_pairs = inside.P[:, :seq_len, :seq_len]
     outside_pairs = outside.bar_P[:, :seq_len, :seq_len]
+    p_seq = inside.p_seq[:seq_len]
 
-    # bpp[i, j] = sum_bp inside.P[bp, i, j] * outside.bar_P[bp, i, j].
-    bpp = jnp.einsum("kij,kij->ij", inside_pairs, outside_pairs) / inside.partition
+    bp_indices = bp_bases.astype(jnp.int32)
+    base_i_idx = bp_indices[:, 0]
+    base_j_idx = bp_indices[:, 1]
+    prob_i = p_seq[:, base_i_idx].T  # (NBPS, seq_len)
+    prob_j = p_seq[:, base_j_idx].T  # (NBPS, seq_len)
+    base_weights = prob_i[:, :, None] * prob_j[:, None, :]
+
+    # bpp[i, j] = sum_bp inside.P[bp, i, j] * outside.bar_P[bp, i, j] * p_seq[i, bi] * p_seq[j, bj].
+    weighted_pairs = inside_pairs * outside_pairs * base_weights
+    bpp = jnp.sum(weighted_pairs, axis=0) / inside.partition
 
     bpp = jnp.triu(bpp, k=1)
     bpp = bpp + bpp.T
