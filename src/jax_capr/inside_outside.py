@@ -118,9 +118,13 @@ def assemble_bpp_matrix(inside: InsideTables, outside: OutsideTables) -> Array:
     if inside.partition == 0.0:
         raise ValueError("Partition function is zero; cannot assemble BPP matrix.")
 
-    weighted = jnp.sum(inside.P * outside.bar_P, axis=0) / inside.partition
     seq_len = inside.p_seq.shape[0]
-    bpp = jnp.array(weighted[:seq_len, :seq_len])
+    # Only retain real sequence positions before combining inside/outside terms.
+    inside_pairs = inside.P[:, :seq_len, :seq_len]
+    outside_pairs = outside.bar_P[:, :seq_len, :seq_len]
+
+    # bpp[i, j] = sum_bp inside.P[bp, i, j] * outside.bar_P[bp, i, j].
+    bpp = jnp.einsum("kij,kij->ij", inside_pairs, outside_pairs)
 
     bpp = jnp.triu(bpp, k=1)
     bpp = bpp + bpp.T
