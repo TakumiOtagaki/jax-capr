@@ -124,7 +124,7 @@ def assemble_bpp_matrix(inside: InsideTables, outside: OutsideTables) -> Array:
     outside_pairs = outside.bar_P[:, :seq_len, :seq_len]
 
     # bpp[i, j] = sum_bp inside.P[bp, i, j] * outside.bar_P[bp, i, j].
-    bpp = jnp.einsum("kij,kij->ij", inside_pairs, outside_pairs)
+    bpp = jnp.einsum("kij,kij->ij", inside_pairs, outside_pairs) / inside.partition
 
     bpp = jnp.triu(bpp, k=1)
     bpp = bpp + bpp.T
