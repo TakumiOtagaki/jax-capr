@@ -6,6 +6,9 @@
  - `src/jax_capr/jax_outside.py`（outside）
  - `submodules/jax-rnafold/src/jax_rnafold/d0/ss.py`（inside）。
 
+研究ノート
+ - notes/research_note_1112.pdf
+
 検証：ViennaRNA (`submodules/ViennaRNA/src/ViennaRNA`) の base pairing probability（bpp）と比較中。
 
 
