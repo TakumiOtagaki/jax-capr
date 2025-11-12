@@ -7,44 +7,30 @@
 
 
 
-実装中：jax_outside.py（outside）、ss.py（inside）。
+実装中：
+ - `src/jax_capr/jax_outside.py`（outside）
+ - `submodules/jax-rnafold/src/jax_rnafold/d0/ss.py`（inside）。
 
-検証：ViennaRNA の base pairing probability（bpp）と比較中。
-
-scaling 周りの既知事項
-
-
-
-既知のエラーは解消済み（multi loop まわりにわずかな不安はあるが、基本 OK）。
-
-一旦 scaling は信じて先へ進める方針で問題なし。
-
-入力表現：配列は one-hot。paddedpseq 由来のエラーは無視してよい。
-
-短鎖での精度：長さ ≈12 の配列で 1e-16 程度の高精度（scale=0 でも scale=-1.0 でも）。
+検証：ViennaRNA (`submodules/ViennaRNA/src/ViennaRNA`) の base pairing probability（bpp）と比較中。
 
 
+ - scaling 周りの既知事項
+     - scaling 周りの既知のエラーは解消済み.
+     - scaling は信じて先へ進める.
 
+ - 入力表現
+     - 配列は one-hot。padded_p_seq 由来のエラーは一旦無視してよい。
 
-
+ - 短鎖での精度：長さ ≈12 の配列で 1e-16 程度の高精度（scale=0 でも scale=-1.0 でも）。
 
 
 2) 観測された挙動（再現ケース）
 
-
-
-
-
-
-
 2-1. 長い配列（例1）
-
-
 
 配列：GGAUAGUACGAAUUUAGACUCUCACUUACCGCAGUAAGUUACCCUCGUCU
 
 scale=-2.0 と -4.0 で bpp の 最大・平均誤差が完全一致：
-
 
 
 Max abs diff: 1.402e-03
@@ -55,13 +41,7 @@ Mean abs diff: 6.887e-06
 
 
 
-
-
-
-
 2-2. 長い配列（例2：大誤差）
-
-
 
 配列：
 
@@ -89,29 +69,22 @@ Max abs diff: 6.697e-02, Mean: 1.629e-04
 
 (45,62): ours 9.327e-01 vs Vienna 9.997e-01
 
-解釈：「マルチクローズ対とブランチ開始が隣接（unpaired=0）」の境界条件で outside/inside のどこかが崩れている可能性が高い。
-
-
-
-
+解釈：「マルチクローズ対とブランチ開始が隣接（unpaired=0）」の境界条件で outside/inside のどこかが崩れている可能性が高い
+ * しかし、かなり細かく multiloop (inside/outside)のコードを読んだが、今のところバグは見つからない...他のところにある可能性も出てきた。
 
 
 
 3) これまでの仮説と潰し込み結果
 
-
-
 最初の疑い：psum_outer_internal_loops (L183) と psum_outer_bulges (L90) で
 
+ - s_table の index が稀に 0（s_table[0]=1.0）になる off-by-one
 
+ - inside（ss.py）との転置ミス
+     - → 詳細比較の結果、該当ミスは未確認。outside_1105.md の数式や s_table の適用も表面上は整合。
 
-s_table の index が稀に 0（s_table[0]=1.0）になる off-by-one
-
-inside（ss.py）との転置ミス
-
-→ 詳細比較の結果、該当ミスは未確認。outside_1105.md の数式や s_table の適用も表面上は整合。
-
-次の疑い（有力）：エネルギー関数の引数順序ミス
+ - 次の疑い（有力）：エネルギー関数の引数順序ミス
+     - これも詳細な調査の結果、そういったミスはないことがわかった。
 
 
 
