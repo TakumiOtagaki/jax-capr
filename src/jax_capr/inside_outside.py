@@ -37,8 +37,6 @@ class OutsideTables:
     bar_E: Array
     bar_P: Array
     bar_M: Array
-    bar_Pm: Array
-    bar_Pm1: Array
 
 
 @dataclass(slots=True)
@@ -109,8 +107,6 @@ def compute_outside_tables(
         bar_E=outside.bar_E,
         bar_P=outside.bar_P,
         bar_M=outside.bar_M,
-        bar_Pm=outside.bar_Pm,
-        bar_Pm1=outside.bar_Pm1,
     )
 
 
@@ -168,8 +164,6 @@ def compute_inside_outside(
         bar_E=outside_raw.bar_E,
         bar_P=outside_raw.bar_P,
         bar_M=outside_raw.bar_M,
-        bar_Pm=outside_raw.bar_Pm,
-        bar_Pm1=outside_raw.bar_Pm1,
     )
     bpp = assemble_bpp_matrix(inside, outside)
 

@@ -51,8 +51,6 @@ class OutsideComputation:
     bar_E: Array
     bar_P: Array
     bar_M: Array
-    bar_Pm: Array
-    bar_Pm1: Array
 
 
 @dataclass(slots=True)
@@ -62,8 +60,6 @@ class OutsideCarry:
     bar_E: Array
     bar_P: Array
     bar_M: Array
-    bar_Pm: Array
-    bar_Pm1: Array
 
 
 def _construct_outside_partition_fn(
@@ -72,7 +68,7 @@ def _construct_outside_partition_fn(
     *,
     max_loop: int = MAX_LOOP,
     checkpoint_every: int | None = 10,
-) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array, Array, Array]]:
+    ) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
     if checkpoint_every is None:
         scan = lax.scan
     else:
@@ -521,7 +517,7 @@ def _construct_outside_partition_fn(
         ML: Array,
         E: Array,
         s_table: Array,
-    ) -> tuple[Array, Array, Array, Array, Array]:
+    ) -> tuple[Array, Array, Array]:
         seq_len = int(p_seq.shape[0])
         bar_E = jnp.zeros_like(E)
         bar_E = bar_E.at[0].set(1.0)
@@ -529,8 +525,6 @@ def _construct_outside_partition_fn(
         bar_M = jnp.zeros_like(ML)
         # bar_M[:, i, i] = 1.0 for i in range(seq_len + 1)
         # bar_M = bar_M.at[:, jnp.arange(seq_len + 1), jnp.arange(seq_len + 1)].set(1.0)
-        bar_Pm = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
-        bar_Pm1 = jnp.zeros((seq_len + 1, seq_len + 1), dtype=P.dtype)
 
         padded_p_seq = jnp.zeros((seq_len + 1, 4), dtype=f64)
         padded_p_seq = padded_p_seq.at[:seq_len].set(p_seq)
@@ -538,21 +532,18 @@ def _construct_outside_partition_fn(
         bar_E = fill_bar_E(bar_E, P, padded_p_seq, s_table)
 
         def fill_tables_by_step(carry, d):
-            bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = carry
-
-            # bar_Pm = fill_bar_Pm(d, padded_p_seq, ML, bar_P, bar_Pm, s_table)
-            # bar_Pm1 = fill_bar_Pm1(d, padded_p_seq, bar_P, bar_Pm1, s_table)
+            bar_P, bar_M, bar_E = carry
             bar_P = fill_bar_P(d, padded_p_seq, ML, E, bar_P, bar_M, bar_E, s_table)
             bar_M = fill_bar_M(d, bar_M, bar_P, P, padded_p_seq, s_table)
 
-            return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), None
+            return (bar_P, bar_M, bar_E), None
 
-        (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1), _ = scan(
+        (bar_P, bar_M, bar_E), _ = scan(
             fill_tables_by_step,
-            (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1),
+            (bar_P, bar_M, bar_E),
             jnp.arange(seq_len - 1, 0, -1),
         )
-        return (bar_P, bar_M, bar_E, bar_Pm, bar_Pm1)
+        return (bar_P, bar_M, bar_E)
 
     return outside_partition
 
@@ -563,7 +554,7 @@ def get_outside_partition_fn(
     *,
     max_loop: int = MAX_LOOP,
     checkpoint_every: int | None = 10,
-) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array, Array, Array]]:
+) -> Callable[[Array, Array, Array, Array, Array], tuple[Array, Array, Array]]:
     """Return a cached outside kernel specialized to a given sequence length."""
 
     key = (int(id(em)), seq_len, max_loop, checkpoint_every)
@@ -604,7 +595,7 @@ def compute_outside(
         max_loop=max_loop,
         checkpoint_every=checkpoint_every,
     )
-    bar_P, bar_M, bar_E, bar_Pm, bar_Pm1 = outside_partition(
+    bar_P, bar_M, bar_E = outside_partition(
         inside.p_seq,
         inside.P,
         inside.ML,
@@ -616,6 +607,4 @@ def compute_outside(
         bar_E=bar_E,
         bar_P=bar_P,
         bar_M=bar_M,
-        bar_Pm=bar_Pm,
-        bar_Pm1=bar_Pm1,
     )
