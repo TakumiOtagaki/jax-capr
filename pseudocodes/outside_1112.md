@@ -1,7 +1,3 @@
-outside P の計算のマルチループのところがめちゃくちゃ間違っていた、自動微分を考えたら普通にわかるのに、なんか囚われていた。
-
-
-
 ```math
 \begin{align}
 \text{scaled 外側アルゴリズム with } &  x_i, x_j \text{ terms:} \\
@@ -39,5 +35,3 @@ P'(\text{bp_idx}_{i, h-1}, i, h-1) B(M_p(b_i, b_{h-1})) x_{i, b_i} x_{h-1, b_{h-
 P'(\text{bp_idx}_{i, h-1}, i, h-1) B(M_p(b_i, b_{h-1}))  x_{i, b_i} x_{h-1, b_{h-1}} 
 \end{align}
 ```
-
-これが正しい。
